@@ -49,16 +49,23 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
                                           juce::File::getSpecialLocation(juce::File::userMusicDirectory),
                                           "*.wav;*.aif;*.aiff;*.mp3");
 
-                if (chooser.browseForFileToOpen())
-                {
-                    juce::File file = chooser.getResult();
-                    ownerView.samplerProcessor.loadSample(file);
-                }
+                // Use launchAsync with a lambda callback instead of browseForFileToOpen
+                chooser.launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                    [this](const juce::FileChooser &fc)
+                                    {
+                                        auto result = fc.getResult();
+                                        if (result.exists())
+                                        {
+                                            ownerView.samplerProcessor.loadSample(result);
+                                        }
+                                    });
+
                 return false;
             }
         }
 
-        return false; // We handled this URL
+        // We handled this URL
+        return false;
     }
     // Handle custom font loading
     else if (url.startsWith("BinaryData::"))
@@ -76,11 +83,12 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
             if (data != nullptr && size > 0)
             {
                 // Convert binary data to base64
-                juce::MemoryBlock mb(data, size);
+                // Fix: Cast size to size_t to avoid warning
+                juce::MemoryBlock mb(data, static_cast<size_t>(size));
                 juce::String base64 = mb.toBase64Encoding();
 
                 // Create a data URL for the font
-                juce::String dataUrl = "data:font/ttf;base64," + base64;
+                juce::String dataUrl = juce::String("data:font/ttf;base64,") + base64;
 
                 // Navigate to this data URL
                 this->goToURL(dataUrl);
@@ -106,7 +114,8 @@ LayoutView::LayoutView(SamplerProcessor &proc)
 {
     auto browser = new LayoutMessageHandler(*this);
     webView.reset(browser);
-    webView->setFocusContainer(false);
+    // Update: Use the newer API to avoid deprecation warning
+    webView->setFocusContainerType(juce::Component::FocusContainerType::none);
     addAndMakeVisible(webView.get());
 
     juce::String htmlContent = juce::String(BinaryData::layout_html, BinaryData::layout_htmlSize);
@@ -117,7 +126,7 @@ LayoutView::LayoutView(SamplerProcessor &proc)
         "<style>\n" + cssContent + "\n    </style>");
 
     // Load the combined HTML content
-    webView->goToURL("data:text/html;charset=utf-8," + htmlContent);
+    webView->goToURL(juce::String("data:text/html;charset=utf-8,") + htmlContent);
 }
 
 LayoutView::~LayoutView()
@@ -127,6 +136,8 @@ LayoutView::~LayoutView()
 
 void LayoutView::paint(juce::Graphics &g)
 {
+    // Suppress unused parameter warning
+    juce::ignoreUnused(g);
     // Nothing to paint - WebView handles rendering
 }
 
@@ -153,10 +164,10 @@ void LayoutView::updateLevels(float leftLevel, float rightLevel)
 
     try
     {
-        // Update meters in the WebView
-        juce::String script = "if (window.updateMeters) { window.updateMeters(" +
-                              juce::String(leftLevel, 1) + ", " +
-                              juce::String(rightLevel, 1) + "); }";
+        // Update meters in the WebView - fix string concatenation
+        juce::String script = juce::String("if (window.updateMeters) { window.updateMeters(") +
+                              juce::String(leftLevel, 1) + juce::String(", ") +
+                              juce::String(rightLevel, 1) + juce::String("); }");
 
         webView->evaluateJavascript(script);
     }
@@ -176,9 +187,9 @@ void LayoutView::updatePlaybackPosition(int position)
 
     try
     {
-        // Update waveform display in the WebView
-        juce::String script = "if (window.updatePlaybackPosition) { window.updatePlaybackPosition(" +
-                              juce::String(position) + "); }";
+        // Update waveform display in the WebView - fix string concatenation
+        juce::String script = juce::String("if (window.updatePlaybackPosition) { window.updatePlaybackPosition(") +
+                              juce::String(position) + juce::String("); }");
 
         webView->evaluateJavascript(script);
     }
@@ -201,12 +212,12 @@ void LayoutView::timerCallback()
         {
             pageLoaded = true;
 
-            // Initialize with current values
-            juce::String script = "if (window.initializeSampler) { window.initializeSampler({" +
-                                  "attack: " + juce::String(lastAttackMs) + ", " +
-                                  "release: " + juce::String(lastReleaseMs) + ", " +
-                                  "gain: " + juce::String(lastGain) + ", " +
-                                  "sampleName: '" + lastSampleName + "'" +
+            // Initialize with current values - fix string concatenation issue
+            juce::String script = juce::String("if (window.initializeSampler) { window.initializeSampler({") +
+                                  juce::String("attack: ") + juce::String(lastAttackMs) + juce::String(", ") +
+                                  juce::String("release: ") + juce::String(lastReleaseMs) + juce::String(", ") +
+                                  juce::String("gain: ") + juce::String(lastGain) + juce::String(", ") +
+                                  juce::String("sampleName: '") + lastSampleName + juce::String("'") +
                                   "}); }";
 
             webView->evaluateJavascript(script);
@@ -224,8 +235,9 @@ void LayoutView::timerCallback()
 
             samplesJson += "]";
 
-            juce::String samplesScript = "if (window.updateSamplesList) { window.updateSamplesList(" +
-                                         samplesJson + "); }";
+            // Fix string concatenation
+            juce::String samplesScript = juce::String("if (window.updateSamplesList) { window.updateSamplesList(") +
+                                         samplesJson + juce::String("); }");
 
             webView->evaluateJavascript(samplesScript);
         }
@@ -246,12 +258,12 @@ void LayoutView::timerCallback()
 
     if (paramsChanged)
     {
-        // Update sampler UI with current values
-        juce::String script = "if (window.updateSamplerControls) { window.updateSamplerControls({" +
-                              "attack: " + juce::String(attackMs) + ", " +
-                              "release: " + juce::String(releaseMs) + ", " +
-                              "gain: " + juce::String(gain) + ", " +
-                              "sampleName: '" + sampleName + "'" +
+        // Update sampler UI with current values - fix string concatenation
+        juce::String script = juce::String("if (window.updateSamplerControls) { window.updateSamplerControls({") +
+                              juce::String("attack: ") + juce::String(attackMs) + juce::String(", ") +
+                              juce::String("release: ") + juce::String(releaseMs) + juce::String(", ") +
+                              juce::String("gain: ") + juce::String(gain) + juce::String(", ") +
+                              juce::String("sampleName: '") + sampleName + juce::String("'") +
                               "}); }";
 
         webView->evaluateJavascript(script);

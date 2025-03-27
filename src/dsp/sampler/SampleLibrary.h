@@ -12,6 +12,29 @@ struct SampleData
     juce::String name;
 
     SampleData() : buffer(nullptr), sampleRate(0.0), maxLength(0) {}
+
+    // Add move constructor
+    SampleData(SampleData &&other) noexcept
+        : buffer(std::move(other.buffer)),
+          sampleRate(other.sampleRate),
+          maxLength(other.maxLength),
+          name(std::move(other.name))
+    {
+    }
+
+    // Add move assignment operator
+    SampleData &operator=(SampleData &&other) noexcept
+    {
+        buffer = std::move(other.buffer);
+        sampleRate = other.sampleRate;
+        maxLength = other.maxLength;
+        name = std::move(other.name);
+        return *this;
+    }
+
+    // Delete copy constructor and assignment operator explicitly
+    SampleData(const SampleData &) = delete;
+    SampleData &operator=(const SampleData &) = delete;
 };
 
 class SampleLibrary

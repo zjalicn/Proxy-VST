@@ -40,7 +40,15 @@ bool SampleLibrary::loadFromFile(const juce::String &name, const juce::File &fil
 
 bool SampleLibrary::loadFromStream(const juce::String &name, juce::InputStream &stream)
 {
-    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(std::make_unique<juce::MemoryInputStream>(stream.readEntireStreamAsData(), true)));
+    // Read the data from the stream into a MemoryBlock
+    juce::MemoryBlock memoryBlock;
+    stream.readIntoMemoryBlock(memoryBlock);
+
+    // Create a MemoryInputStream from the MemoryBlock
+    auto memoryInputStream = std::make_unique<juce::MemoryInputStream>(memoryBlock.getData(), memoryBlock.getSize(), false);
+
+    // Create the format reader - pass the unique_ptr directly
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(std::move(memoryInputStream)));
 
     if (reader == nullptr)
         return false;
@@ -84,7 +92,26 @@ SampleData SampleLibrary::getSampleAudioBuffer(const juce::String &name) const
     auto it = samples.find(name);
 
     if (it != samples.end())
-        return it->second;
+    {
+        // Create a new SampleData object and return it
+        SampleData result;
+
+        // Deep copy the audio buffer if it exists
+        if (it->second.buffer)
+        {
+            result.buffer = std::make_unique<juce::AudioBuffer<float>>(
+                it->second.buffer->getNumChannels(),
+                it->second.buffer->getNumSamples());
+            result.buffer->makeCopyOf(*(it->second.buffer));
+        }
+
+        // Copy other properties
+        result.sampleRate = it->second.sampleRate;
+        result.maxLength = it->second.maxLength;
+        result.name = it->second.name;
+
+        return result;
+    }
 
     return SampleData(); // Return empty sample data if not found
 }
