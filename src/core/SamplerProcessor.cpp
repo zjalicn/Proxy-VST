@@ -247,28 +247,15 @@ SamplerProcessor::~SamplerProcessor()
 
 void SamplerProcessor::loadDefaultSamples()
 {
-    // Load the built-in 808 samples from binary data
-    int size = 0;
-    const void *data = BinaryData::getNamedResource("zay_808_wav", size);
+    // Scan the user's samples folder in Documents/Proxy/Samples
+    juce::StringArray userSamples = sampleLibrary.scanUserSamplesFolder();
 
-    if (data != nullptr && size > 0)
+    // If user samples were found, use the first one as default
+    if (userSamples.size() > 0)
     {
-        juce::MemoryInputStream stream(data, static_cast<size_t>(size), false);
-        sampleLibrary.loadFromStream("zay_808", stream);
+        setSample(userSamples[0]);
     }
-
-    // Load the thick spinz 808 sample
-    size = 0;
-    data = BinaryData::getNamedResource("thick_spinz_808_wav", size);
-
-    if (data != nullptr && size > 0)
-    {
-        juce::MemoryInputStream stream(data, static_cast<size_t>(size), false);
-        sampleLibrary.loadFromStream("thick_spinz_808", stream);
-    }
-
-    // Set the default sample
-    setSample("zay_808");
+    // No fallback to built-in samples - we'll just display a message when no samples are found
 }
 
 void SamplerProcessor::loadSample(const juce::File &file)
@@ -360,6 +347,23 @@ void SamplerProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Midi
         // If no voices are playing, we can just keep the last position
         // or reset it to 0 depending on desired behavior
     }
+}
+
+bool SamplerProcessor::isAnyVoiceActive() const
+{
+    if (sampler == nullptr)
+        return false;
+
+    for (int i = 0; i < sampler->getNumVoices(); ++i)
+    {
+        if (auto *voice = dynamic_cast<ProxySamplerVoice *>(sampler->getVoice(i)))
+        {
+            if (voice->isVoiceActive())
+                return true;
+        }
+    }
+
+    return false;
 }
 
 void SamplerProcessor::reset()

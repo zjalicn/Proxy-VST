@@ -22,16 +22,18 @@
         <div class="sidebar">
           <div class="sidebar__title">Samples</div>
           <ul id="sampleList" class="sidebar__sample-list">
-            <li
-              class="sidebar__sample-item sidebar__sample-item--active"
-              data-sample="zay_808"
-            >
-              zay_808
-            </li>
-            <li class="sidebar__sample-item" data-sample="thick_spinz_808">
-              thick_spinz_808
-            </li>
+            <!-- Sample items will be dynamically added here -->
           </ul>
+
+          <!-- Add a message element that will be shown when no samples are found -->
+          <div
+            id="noSamplesMessage"
+            class="sidebar__no-samples-message"
+            style="display: none"
+          >
+            No samples found. Please add audio files to:<br />
+            Documents/Proxy/Samples
+          </div>
         </div>
 
         <!-- Main Editor Panel -->
@@ -41,7 +43,11 @@
               id="waveformDisplay"
               class="editor__waveform-display"
             ></canvas>
-            <div id="playbackPosition" class="editor__waveform-progress"></div>
+            <div
+              id="playbackPosition"
+              class="editor__waveform-progress"
+              style="display: none"
+            ></div>
           </div>
           <div class="editor__controls">
             <!-- Attack Knob -->
@@ -173,7 +179,23 @@
       // Update the sample list
       window.updateSamplesList = function (samples) {
         const sampleList = document.getElementById("sampleList");
+        const noSamplesMessage = document.getElementById("noSamplesMessage");
+
+        // Clear the list
         sampleList.innerHTML = "";
+
+        // If no samples, show the message and return
+        if (!samples || samples.length === 0) {
+          if (noSamplesMessage) {
+            noSamplesMessage.style.display = "block";
+          }
+          return;
+        }
+
+        // Hide the no samples message
+        if (noSamplesMessage) {
+          noSamplesMessage.style.display = "none";
+        }
 
         samples.forEach((sample) => {
           const li = document.createElement("li");
@@ -298,6 +320,9 @@
             const positionX = positionPercentage * canvasWidth;
             playbackPositionElement.style.left = `${positionX}px`;
           }
+
+          // Note: The visibility of the playback position is controlled by C++
+          // through direct DOM manipulation rather than here
         }
       };
 

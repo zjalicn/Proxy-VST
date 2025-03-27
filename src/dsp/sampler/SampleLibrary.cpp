@@ -131,6 +131,73 @@ bool SampleLibrary::containsSample(const juce::String &name) const
     return samples.find(name) != samples.end();
 }
 
+juce::File SampleLibrary::getSamplesFolder() const
+{
+    // Get user documents folder
+    juce::File docsFolder = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    juce::File samplesFolder = docsFolder.getChildFile("Proxy/Samples");
+
+    // Create the directory if it doesn't exist
+    if (!samplesFolder.exists())
+    {
+        juce::Result result = samplesFolder.createDirectory();
+        if (result.failed())
+        {
+            juce::Logger::writeToLog("Failed to create samples directory: " + result.getErrorMessage());
+        }
+    }
+
+    return samplesFolder;
+}
+
+bool SampleLibrary::scanFolderForSamples(const juce::File &folder)
+{
+    if (!folder.exists() || !folder.isDirectory())
+        return false;
+
+    // Get all audio files in the directory
+    juce::Array<juce::File> audioFiles;
+    const int maxFilesToScan = 200; // Reasonable limit to prevent excessive scanning
+
+    folder.findChildFiles(audioFiles, juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.mp3");
+
+    // Limit the number of files for performance
+    if (audioFiles.size() > maxFilesToScan)
+        audioFiles.resize(maxFilesToScan);
+
+    int filesLoaded = 0;
+
+    // Load each audio file
+    for (const auto &file : audioFiles)
+    {
+        juce::String name = file.getFileNameWithoutExtension();
+
+        // Skip if we already have a sample with this name
+        if (containsSample(name))
+            continue;
+
+        if (loadFromFile(name, file))
+            filesLoaded++;
+    }
+
+    return filesLoaded > 0;
+}
+
+juce::StringArray SampleLibrary::scanUserSamplesFolder()
+{
+    // Clear existing samples
+    clear();
+
+    // Get the samples folder
+    juce::File samplesFolder = getSamplesFolder();
+
+    // Scan the folder for samples
+    scanFolderForSamples(samplesFolder);
+
+    // Return the list of available samples
+    return getAvailableSamples();
+}
+
 void SampleLibrary::clear()
 {
     samples.clear();

@@ -53,6 +53,11 @@ public:
     juce::StringArray getAvailableSamples() const;
     bool containsSample(const juce::String &name) const;
 
+    // Folder scanning and management
+    bool scanFolderForSamples(const juce::File &folder);
+    juce::File getSamplesFolder() const;
+    juce::StringArray scanUserSamplesFolder();
+
     // Management
     void clear();
     bool removeSample(const juce::String &name);

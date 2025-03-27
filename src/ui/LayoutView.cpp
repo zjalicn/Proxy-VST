@@ -117,6 +117,7 @@ LayoutView::LayoutView(SamplerProcessor &proc)
       lastLeftLevel(0.0f),
       lastRightLevel(0.0f),
       lastPlaybackPosition(0),
+      voicesActive(false),
       lastAttackMs(proc.getAttack()),
       lastReleaseMs(proc.getRelease()),
       lastGain(proc.getGain()),
@@ -134,6 +135,11 @@ LayoutView::LayoutView(SamplerProcessor &proc)
     htmlContent = htmlContent.replace(
         "<link rel=\"stylesheet\" href=\"./layout.css\" />",
         "<style>\n" + cssContent + "\n    </style>");
+
+    // Update playback position div to be hidden by default
+    htmlContent = htmlContent.replace(
+        "<div id=\"playbackPosition\" class=\"editor__waveform-progress\"></div>",
+        "<div id=\"playbackPosition\" class=\"editor__waveform-progress\" style=\"display: none;\"></div>");
 
     // Load the combined HTML content
     webView->goToURL(juce::String("data:text/html;charset=utf-8,") + htmlContent);
@@ -205,6 +211,10 @@ void LayoutView::updatePlaybackPosition(int position)
         juce::String script = juce::String("if (window.updatePlaybackPosition) { window.updatePlaybackPosition(") +
                               juce::String(position) + juce::String("); }");
 
+        // Add visibility check to the script
+        script += juce::String("\nif (document.getElementById('playbackPosition')) { document.getElementById('playbackPosition').style.display = '") +
+                  juce::String(samplerProcessor.isAnyVoiceActive() ? "block" : "none") + juce::String("'; }");
+
         webView->evaluateJavascript(script);
     }
     catch (const std::exception &e)
@@ -212,6 +222,33 @@ void LayoutView::updatePlaybackPosition(int position)
         // Log any errors for debugging
         juce::Logger::writeToLog("JavaScript error in waveform: " + juce::String(e.what()));
     }
+}
+
+void LayoutView::updateSamplesList()
+{
+    if (!pageLoaded)
+        return;
+
+    // Get the list of available samples
+    juce::StringArray samples = samplerProcessor.getAvailableSamples();
+
+    // Create the JSON string array
+    juce::String samplesJson = "[";
+
+    for (int i = 0; i < samples.size(); ++i)
+    {
+        samplesJson += "\"" + samples[i] + "\"";
+        if (i < samples.size() - 1)
+            samplesJson += ",";
+    }
+
+    samplesJson += "]";
+
+    // Update the samples list in the web view
+    juce::String samplesScript = juce::String("if (window.updateSamplesList) { window.updateSamplesList(") +
+                                 samplesJson + juce::String("); }");
+
+    webView->evaluateJavascript(samplesScript);
 }
 
 void LayoutView::updateWaveformDisplay()
@@ -294,24 +331,8 @@ void LayoutView::timerCallback()
 
             webView->evaluateJavascript(script);
 
-            // Also update available samples list
-            juce::StringArray samples = samplerProcessor.getAvailableSamples();
-            juce::String samplesJson = "[";
-
-            for (int i = 0; i < samples.size(); ++i)
-            {
-                samplesJson += "\"" + samples[i] + "\"";
-                if (i < samples.size() - 1)
-                    samplesJson += ",";
-            }
-
-            samplesJson += "]";
-
-            // Fix string concatenation
-            juce::String samplesScript = juce::String("if (window.updateSamplesList) { window.updateSamplesList(") +
-                                         samplesJson + juce::String("); }");
-
-            webView->evaluateJavascript(samplesScript);
+            // Update the samples list
+            updateSamplesList();
 
             // Initialize waveform display with current sample data
             juce::Logger::writeToLog("Page loaded, initializing waveform display");
@@ -355,5 +376,19 @@ void LayoutView::timerCallback()
         lastReleaseMs = releaseMs;
         lastGain = gain;
         lastSampleName = sampleName;
+    }
+
+    // Check if any voices are active
+    bool currentlyActive = samplerProcessor.isAnyVoiceActive();
+    if (voicesActive != currentlyActive)
+    {
+        voicesActive = currentlyActive;
+
+        // Update playback position visibility in JavaScript
+        juce::String visibilityScript =
+            "if (document.getElementById('playbackPosition')) { document.getElementById('playbackPosition').style.display = '" +
+            juce::String(voicesActive ? "block" : "none") + "'; }";
+
+        webView->evaluateJavascript(visibilityScript);
     }
 }

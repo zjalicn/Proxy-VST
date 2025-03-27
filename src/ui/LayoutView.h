@@ -21,6 +21,9 @@ public:
     // Update waveform display with actual sample data
     void updateWaveformDisplay();
 
+    // Update samples list
+    void updateSamplesList();
+
     // Custom web view that handles our custom URL scheme
     class LayoutMessageHandler : public juce::WebBrowserComponent
     {
@@ -41,6 +44,7 @@ private:
     bool pageLoaded;
     float lastLeftLevel, lastRightLevel;
     int lastPlaybackPosition;
+    bool voicesActive;
 
     // Sampler parameters
     float lastAttackMs;

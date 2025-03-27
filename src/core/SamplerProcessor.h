@@ -26,6 +26,7 @@ public:
     void handleMidiEvent(const juce::MidiMessage &midiMessage);
     void setCurrentPlaybackSamplePosition(int pos) { currentSamplePosition = pos; }
     int getCurrentPlaybackSamplePosition() const { return currentSamplePosition; }
+    bool isAnyVoiceActive() const;
 
     // Parameters
     void setAttack(float attackTimeMs);
