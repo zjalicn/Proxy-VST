@@ -62,15 +62,6 @@
               <div class="knob__label">Release</div>
             </div>
 
-            <!-- Gain Knob -->
-            <div class="control-group">
-              <div class="knob" id="gainKnob">
-                <div id="gainIndicator" class="knob__indicator"></div>
-              </div>
-              <div id="gainValue" class="knob__value">0.0 dB</div>
-              <div class="knob__label">Gain</div>
-            </div>
-
             <!-- Output Meters -->
             <div class="meters">
               <div class="meter">
@@ -119,7 +110,6 @@
         parameters: {
           attack: 5.0,
           release: 100.0,
-          gain: 1.0,
         },
         ui: {
           isDragging: false,
@@ -166,9 +156,6 @@
         }
         if (values.release !== undefined) {
           state.parameters.release = parseFloat(values.release);
-        }
-        if (values.gain !== undefined) {
-          state.parameters.gain = parseFloat(values.gain);
         }
         if (values.sampleName !== undefined) {
           state.samples.sampleName = values.sampleName;
@@ -221,9 +208,6 @@
         if (values.release !== undefined) {
           state.parameters.release = parseFloat(values.release);
         }
-        if (values.gain !== undefined) {
-          state.parameters.gain = parseFloat(values.gain);
-        }
         if (values.sampleName !== undefined) {
           state.samples.sampleName = values.sampleName;
         }
@@ -245,10 +229,9 @@
 
       // Update knob UI with current values
       function updateKnobUI() {
-        // Map 0-1 range to 45-315 degrees for knob rotation
-        const attackAngle = 45 + (state.parameters.attack / 500) * 270;
-        const releaseAngle = 45 + (state.parameters.release / 1000) * 270;
-        const gainAngle = 45 + ((state.parameters.gain - 0.5) / 1.5) * 270;
+        // Map 0-1 range to 225-495 degrees (7 o'clock to 1 o'clock, clockwise rotation)
+        const attackAngle = 225 + (state.parameters.attack / 500) * 270;
+        const releaseAngle = 225 + (state.parameters.release / 1000) * 270;
 
         // Update attack knob
         document.getElementById(
@@ -265,15 +248,6 @@
         document.getElementById(
           "releaseValue"
         ).textContent = `${state.parameters.release.toFixed(1)} ms`;
-
-        // Update gain knob
-        document.getElementById(
-          "gainIndicator"
-        ).style.transform = `translate(-50%, -100%) rotate(${gainAngle}deg)`;
-        const gainDb = 20 * Math.log10(state.parameters.gain);
-        document.getElementById("gainValue").textContent = `${gainDb.toFixed(
-          1
-        )} dB`;
       }
 
       // Update meters from the C++ side
@@ -369,33 +343,12 @@
               { once: true }
             );
           });
-
-        // Gain knob
-        document
-          .getElementById("gainKnob")
-          .addEventListener("mousedown", function (e) {
-            e.preventDefault();
-            state.ui.isDragging = true;
-            state.ui.activeKnob = "gain";
-            state.ui.startY = e.clientY;
-            state.ui.startValue = state.parameters.gain;
-
-            document.addEventListener("mousemove", handleKnobDrag);
-            document.addEventListener(
-              "mouseup",
-              () => {
-                document.removeEventListener("mousemove", handleKnobDrag);
-                state.ui.isDragging = false;
-                state.ui.activeKnob = null;
-              },
-              { once: true }
-            );
-          });
       }
 
       // Handle knob dragging
       function handleKnobDrag(moveEvent) {
         moveEvent.preventDefault();
+        // Drag up to decrease, drag down to increase (more intuitive)
         const deltaY = state.ui.startY - moveEvent.clientY;
         const sensitivity = 200; // Adjust for desired sensitivity
 
@@ -417,15 +370,6 @@
           state.parameters.release = newValue;
           updateKnobUI();
           window.valueChanged("sampler", "release", newValue);
-        } else if (state.ui.activeKnob === "gain") {
-          // Gain: 0 to 2 (linear)
-          let newValue = Math.max(
-            0,
-            Math.min(2, state.ui.startValue + (deltaY / sensitivity) * 2)
-          );
-          state.parameters.gain = newValue;
-          updateKnobUI();
-          window.valueChanged("sampler", "gain", newValue);
         }
       }
 
