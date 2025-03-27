@@ -1,0 +1,80 @@
+// =======================
+// Theme Variables
+// =======================
+
+// Color Palette - Teal/Blue Theme
+$primary-color: #00bcd4; // Teal accent color
+$primary-hover: #4dd0e1; // Lighter teal for hover states
+$background-dark: #17212b; // Dark background with slight blue tint
+$background-darker: #0d161e; // Even darker background for contrast
+$surface-color: #1e2a35; // UI element surface color
+$surface-highlight: #2c3e50; // Lighter surfaces for highlighting
+
+// Text Colors
+$text-primary: #ffffff; // Main text color (white)
+$text-secondary: #b0bec5; // Secondary text (light bluish-gray)
+$text-muted: #607d8b; // Muted text (grayish-blue)
+
+// Functional Colors
+$success-color: #4caf50; // Green for positive indicators
+$warning-color: #ffeb3b; // Yellow for warnings
+$danger-color: #f44336; // Red alert/error color
+
+// Meter Gradient Colors
+$meter-gradient: linear-gradient(
+  to top,
+  $success-color 0%,
+  $success-color 55%,
+  $warning-color 65%,
+  #ff9800 75%,
+  $danger-color 85%,
+  $danger-color 100%
+);
+
+// Knob Styles
+$knob-background: linear-gradient(
+  135deg,
+  $surface-color,
+  darken($surface-color, 5%)
+);
+$knob-border: $surface-highlight;
+$knob-indicator: $primary-color;
+$knob-shadow: rgba(0, 0, 0, 0.3);
+
+// UI Element Dimensions
+$header-height: 60px;
+$sidebar-width: 220px;
+$knob-size-small: 30px;
+$knob-size-medium: 45px;
+$knob-size-large: 60px;
+$meter-width: 8px;
+$meter-height: 120px;
+
+// Typography
+$font-family-title: "Arial", sans-serif;
+$font-family-body: "Roboto", "Lucida Grande", Arial, sans-serif;
+$font-size-title: 24px;
+$font-size-section: 16px;
+$font-size-label: 14px;
+$font-size-small: 12px;
+$font-size-tiny: 10px;
+$font-size-micro: 8px;
+
+// Spacing
+$spacing-xs: 4px;
+$spacing-sm: 8px;
+$spacing-md: 16px;
+$spacing-lg: 24px;
+$spacing-xl: 32px;
+
+// Borders & Radiuses
+$border-radius-sm: 3px;
+$border-radius-md: 5px;
+$border-radius-lg: 8px;
+$border-width: 1px;
+$border-color: rgba(255, 255, 255, 0.1);
+
+// Animations & Transitions
+$transition-quick: 0.1s;
+$transition-standard: 0.2s;
+$transition-slow: 0.3s;

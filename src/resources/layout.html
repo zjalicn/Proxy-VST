@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="transparent" />
+    <link rel="stylesheet" href="./layout.css" />
+  </head>
+  <body>
+    <div class="plugin-container">
+      <!-- Header Section -->
+      <div class="header">
+        <div class="title">Proxy</div>
+      </div>
+
+      <!-- Main Content Section -->
+      <div class="main-content">
+        <!-- Sidebar with Sample List -->
+        <div class="sidebar">
+          <div class="sidebar__title">Samples</div>
+          <ul id="sampleList" class="sidebar__sample-list">
+            <li
+              class="sidebar__sample-item sidebar__sample-item--active"
+              data-sample="zay_808"
+            >
+              zay_808
+            </li>
+          </ul>
+          <div id="addSampleButton" class="sidebar__add-button">
+            + Add Sample
+          </div>
+        </div>
+
+        <!-- Main Editor Panel -->
+        <div class="editor">
+          <div class="editor__waveform">
+            <canvas
+              id="waveformDisplay"
+              class="editor__waveform-display"
+            ></canvas>
+            <div id="playbackPosition" class="editor__waveform-progress"></div>
+          </div>
+          <div class="editor__controls">
+            <!-- Attack Knob -->
+            <div class="control-group">
+              <div class="knob" id="attackKnob">
+                <div id="attackIndicator" class="knob__indicator"></div>
+              </div>
+              <div id="attackValue" class="knob__value">5.0 ms</div>
+              <div class="knob__label">Attack</div>
+            </div>
+
+            <!-- Release Knob -->
+            <div class="control-group">
+              <div class="knob" id="releaseKnob">
+                <div id="releaseIndicator" class="knob__indicator"></div>
+              </div>
+              <div id="releaseValue" class="knob__value">100.0 ms</div>
+              <div class="knob__label">Release</div>
+            </div>
+
+            <!-- Gain Knob -->
+            <div class="control-group">
+              <div class="knob" id="gainKnob">
+                <div id="gainIndicator" class="knob__indicator"></div>
+              </div>
+              <div id="gainValue" class="knob__value">0.0 dB</div>
+              <div class="knob__label">Gain</div>
+            </div>
+
+            <!-- Output Meters -->
+            <div class="meters">
+              <div class="meter">
+                <div
+                  id="leftMeter"
+                  class="meter__level"
+                  style="height: 0%"
+                ></div>
+                <div class="meter__ticks">
+                  <div class="meter__tick"></div>
+                  <div class="meter__tick"></div>
+                  <div class="meter__tick"></div>
+                  <div class="meter__tick"></div>
+                </div>
+              </div>
+              <div class="meter">
+                <div
+                  id="rightMeter"
+                  class="meter__level"
+                  style="height: 0%"
+                ></div>
+                <div class="meter__ticks">
+                  <div class="meter__tick"></div>
+                  <div class="meter__tick"></div>
+                  <div class="meter__tick"></div>
+                  <div class="meter__tick"></div>
+                </div>
+              </div>
+              <div class="meter__label">Output</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tooltip" class="tooltip"></div>
+    <div id="debug"></div>
+
+    <script>
+      // Sample data and UI state management
+      const state = {
+        samples: {
+          sampleName: "zay_808",
+          sampleData: null, // Will be populated later for waveform display
+        },
+        parameters: {
+          attack: 5.0,
+          release: 100.0,
+          gain: 1.0,
+        },
+        ui: {
+          isDragging: false,
+          activeKnob: null,
+          startY: 0,
+          startValue: 0,
+          waveformHeight: 0,
+          waveformWidth: 0,
+          playbackPosition: 0,
+        },
+      };
+
+      // DOM elements
+      let waveformCanvas;
+      let waveformContext;
+      let playbackPositionElement;
+
+      // Utility Functions
+      function log(msg) {
+        const debug = document.getElementById("debug");
+        debug.innerHTML += msg + "<br>";
+        debug.style.display = "block";
+      }
+
+      // Protocol handler to send values back to C++
+      window.valueChanged = function (module, param, value) {
+        try {
+          let url;
+          if (module === "sampler") {
+            url = "proxy:sampler:" + param + "=" + value;
+          } else {
+            url = "proxy:" + param + "=" + value;
+          }
+          window.location.href = url;
+        } catch (e) {
+          log("Error in valueChanged: " + e.message);
+        }
+      };
+
+      // Initialize with values from C++
+      window.initializeSampler = function (values) {
+        if (values.attack !== undefined) {
+          state.parameters.attack = parseFloat(values.attack);
+        }
+        if (values.release !== undefined) {
+          state.parameters.release = parseFloat(values.release);
+        }
+        if (values.gain !== undefined) {
+          state.parameters.gain = parseFloat(values.gain);
+        }
+        if (values.sampleName !== undefined) {
+          state.samples.sampleName = values.sampleName;
+        }
+
+        updateKnobUI();
+        updateSampleSelection();
+      };
+
+      // Update the sample list
+      window.updateSamplesList = function (samples) {
+        const sampleList = document.getElementById("sampleList");
+        sampleList.innerHTML = "";
+
+        samples.forEach((sample) => {
+          const li = document.createElement("li");
+          li.className = "sidebar__sample-item";
+          li.dataset.sample = sample;
+          li.textContent = sample;
+
+          if (sample === state.samples.sampleName) {
+            li.classList.add("sidebar__sample-item--active");
+          }
+
+          li.addEventListener("click", () => {
+            // Set the selected sample active
+            document
+              .querySelectorAll(".sidebar__sample-item")
+              .forEach((item) => {
+                item.classList.remove("sidebar__sample-item--active");
+              });
+            li.classList.add("sidebar__sample-item--active");
+
+            // Update the state and send to C++
+            state.samples.sampleName = sample;
+            window.valueChanged("sampler", "sample", sample);
+          });
+
+          sampleList.appendChild(li);
+        });
+      };
+
+      // Update UI with current parameter values (from C++)
+      window.updateSamplerControls = function (values) {
+        if (state.ui.isDragging) return; // Don't update if user is dragging
+
+        if (values.attack !== undefined) {
+          state.parameters.attack = parseFloat(values.attack);
+        }
+        if (values.release !== undefined) {
+          state.parameters.release = parseFloat(values.release);
+        }
+        if (values.gain !== undefined) {
+          state.parameters.gain = parseFloat(values.gain);
+        }
+        if (values.sampleName !== undefined) {
+          state.samples.sampleName = values.sampleName;
+        }
+
+        updateKnobUI();
+        updateSampleSelection();
+      };
+
+      // Update sample selection in the sidebar
+      function updateSampleSelection() {
+        document.querySelectorAll(".sidebar__sample-item").forEach((item) => {
+          if (item.dataset.sample === state.samples.sampleName) {
+            item.classList.add("sidebar__sample-item--active");
+          } else {
+            item.classList.remove("sidebar__sample-item--active");
+          }
+        });
+      }
+
+      // Update knob UI with current values
+      function updateKnobUI() {
+        // Map 0-1 range to 45-315 degrees for knob rotation
+        const attackAngle = 45 + (state.parameters.attack / 500) * 270;
+        const releaseAngle = 45 + (state.parameters.release / 1000) * 270;
+        const gainAngle = 45 + ((state.parameters.gain - 0.5) / 1.5) * 270;
+
+        // Update attack knob
+        document.getElementById(
+          "attackIndicator"
+        ).style.transform = `translate(-50%, -100%) rotate(${attackAngle}deg)`;
+        document.getElementById(
+          "attackValue"
+        ).textContent = `${state.parameters.attack.toFixed(1)} ms`;
+
+        // Update release knob
+        document.getElementById(
+          "releaseIndicator"
+        ).style.transform = `translate(-50%, -100%) rotate(${releaseAngle}deg)`;
+        document.getElementById(
+          "releaseValue"
+        ).textContent = `${state.parameters.release.toFixed(1)} ms`;
+
+        // Update gain knob
+        document.getElementById(
+          "gainIndicator"
+        ).style.transform = `translate(-50%, -100%) rotate(${gainAngle}deg)`;
+        const gainDb = 20 * Math.log10(state.parameters.gain);
+        document.getElementById("gainValue").textContent = `${gainDb.toFixed(
+          1
+        )} dB`;
+      }
+
+      // Update meters from the C++ side
+      window.updateMeters = function (leftLevel, rightLevel) {
+        document.getElementById("leftMeter").style.height = `${leftLevel}%`;
+        document.getElementById("rightMeter").style.height = `${rightLevel}%`;
+      };
+
+      // Update playback position marker
+      window.updatePlaybackPosition = function (position) {
+        state.ui.playbackPosition = position;
+
+        if (waveformCanvas && playbackPositionElement) {
+          // Scale the position to the canvas width
+          const maxPosition = waveformCanvas.width;
+          const scaledPosition = state.ui.playbackPosition / 100; // Sample buffer size will vary
+
+          const positionX = Math.min(scaledPosition * maxPosition, maxPosition);
+          playbackPositionElement.style.left = `${positionX}px`;
+        }
+      };
+
+      // Draw waveform (placeholder - would need actual sample data)
+      function drawWaveform() {
+        if (!waveformContext) return;
+
+        const width = waveformCanvas.width;
+        const height = waveformCanvas.height;
+
+        // Clear the canvas
+        waveformContext.clearRect(0, 0, width, height);
+
+        // Draw placeholder waveform
+        waveformContext.strokeStyle = "#00bcd4";
+        waveformContext.lineWidth = 2;
+        waveformContext.beginPath();
+
+        // Draw a simple sine wave as placeholder
+        for (let x = 0; x < width; x++) {
+          const y = height / 2 + Math.sin(x / 20) * (height / 4);
+          if (x === 0) {
+            waveformContext.moveTo(x, y);
+          } else {
+            waveformContext.lineTo(x, y);
+          }
+        }
+
+        waveformContext.stroke();
+      }
+
+      // Set up knob interactions
+      function setupKnobInteractions() {
+        // Attack knob
+        document
+          .getElementById("attackKnob")
+          .addEventListener("mousedown", function (e) {
+            e.preventDefault();
+            state.ui.isDragging = true;
+            state.ui.activeKnob = "attack";
+            state.ui.startY = e.clientY;
+            state.ui.startValue = state.parameters.attack;
+
+            document.addEventListener("mousemove", handleKnobDrag);
+            document.addEventListener(
+              "mouseup",
+              () => {
+                document.removeEventListener("mousemove", handleKnobDrag);
+                state.ui.isDragging = false;
+                state.ui.activeKnob = null;
+              },
+              { once: true }
+            );
+          });
+
+        // Release knob
+        document
+          .getElementById("releaseKnob")
+          .addEventListener("mousedown", function (e) {
+            e.preventDefault();
+            state.ui.isDragging = true;
+            state.ui.activeKnob = "release";
+            state.ui.startY = e.clientY;
+            state.ui.startValue = state.parameters.release;
+
+            document.addEventListener("mousemove", handleKnobDrag);
+            document.addEventListener(
+              "mouseup",
+              () => {
+                document.removeEventListener("mousemove", handleKnobDrag);
+                state.ui.isDragging = false;
+                state.ui.activeKnob = null;
+              },
+              { once: true }
+            );
+          });
+
+        // Gain knob
+        document
+          .getElementById("gainKnob")
+          .addEventListener("mousedown", function (e) {
+            e.preventDefault();
+            state.ui.isDragging = true;
+            state.ui.activeKnob = "gain";
+            state.ui.startY = e.clientY;
+            state.ui.startValue = state.parameters.gain;
+
+            document.addEventListener("mousemove", handleKnobDrag);
+            document.addEventListener(
+              "mouseup",
+              () => {
+                document.removeEventListener("mousemove", handleKnobDrag);
+                state.ui.isDragging = false;
+                state.ui.activeKnob = null;
+              },
+              { once: true }
+            );
+          });
+      }
+
+      // Handle knob dragging
+      function handleKnobDrag(moveEvent) {
+        moveEvent.preventDefault();
+        const deltaY = state.ui.startY - moveEvent.clientY;
+        const sensitivity = 200; // Adjust for desired sensitivity
+
+        if (state.ui.activeKnob === "attack") {
+          // Attack: 0ms to 500ms
+          let newValue = Math.max(
+            0,
+            Math.min(500, state.ui.startValue + (deltaY / sensitivity) * 500)
+          );
+          state.parameters.attack = newValue;
+          updateKnobUI();
+          window.valueChanged("sampler", "attack", newValue);
+        } else if (state.ui.activeKnob === "release") {
+          // Release: 0ms to 1000ms
+          let newValue = Math.max(
+            0,
+            Math.min(1000, state.ui.startValue + (deltaY / sensitivity) * 1000)
+          );
+          state.parameters.release = newValue;
+          updateKnobUI();
+          window.valueChanged("sampler", "release", newValue);
+        } else if (state.ui.activeKnob === "gain") {
+          // Gain: 0 to 2 (linear)
+          let newValue = Math.max(
+            0,
+            Math.min(2, state.ui.startValue + (deltaY / sensitivity) * 2)
+          );
+          state.parameters.gain = newValue;
+          updateKnobUI();
+          window.valueChanged("sampler", "gain", newValue);
+        }
+      }
+
+      // Add sample button
+      function setupSampleBrowser() {
+        document
+          .getElementById("addSampleButton")
+          .addEventListener("click", function () {
+            window.valueChanged("sampler", "browseSample", "");
+          });
+      }
+
+      // Initialize when document is loaded
+      window.addEventListener("load", function () {
+        // Initialize waveform display
+        waveformCanvas = document.getElementById("waveformDisplay");
+        playbackPositionElement = document.getElementById("playbackPosition");
+
+        if (waveformCanvas) {
+          waveformContext = waveformCanvas.getContext("2d");
+
+          // Set canvas size to match container
+          function resizeCanvas() {
+            const container = waveformCanvas.parentElement;
+            waveformCanvas.width = container.clientWidth;
+            waveformCanvas.height = container.clientHeight;
+            state.ui.waveformWidth = waveformCanvas.width;
+            state.ui.waveformHeight = waveformCanvas.height;
+            drawWaveform();
+          }
+
+          // Initial size and draw
+          resizeCanvas();
+
+          // Redraw on window resize
+          window.addEventListener("resize", resizeCanvas);
+        }
+
+        // Set up UI interactions
+        setupKnobInteractions();
+        setupSampleBrowser();
+
+        // Initialize UI with default values
+        updateKnobUI();
+      });
+    </script>
+  </body>
+</html>
