@@ -237,17 +237,17 @@ SamplerProcessor::SamplerProcessor()
         sampler->addVoice(new ProxySamplerVoice());
     }
 
-    // Load the default sample
-    loadDefaultSample();
+    // Load the default samples
+    loadDefaultSamples();
 }
 
 SamplerProcessor::~SamplerProcessor()
 {
 }
 
-void SamplerProcessor::loadDefaultSample()
+void SamplerProcessor::loadDefaultSamples()
 {
-    // Load the built-in 808 sample from binary data
+    // Load the built-in 808 samples from binary data
     int size = 0;
     const void *data = BinaryData::getNamedResource("zay_808_wav", size);
 
@@ -255,8 +255,20 @@ void SamplerProcessor::loadDefaultSample()
     {
         juce::MemoryInputStream stream(data, static_cast<size_t>(size), false);
         sampleLibrary.loadFromStream("zay_808", stream);
-        setSample("zay_808");
     }
+
+    // Load the thick spinz 808 sample
+    size = 0;
+    data = BinaryData::getNamedResource("thick_spinz_808_wav", size);
+
+    if (data != nullptr && size > 0)
+    {
+        juce::MemoryInputStream stream(data, static_cast<size_t>(size), false);
+        sampleLibrary.loadFromStream("thick_spinz_808", stream);
+    }
+
+    // Set the default sample
+    setSample("zay_808");
 }
 
 void SamplerProcessor::loadSample(const juce::File &file)

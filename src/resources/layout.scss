@@ -42,6 +42,7 @@ html {
   height: $header-height;
   justify-content: space-between;
   border-bottom: $border-width solid $border-color;
+  text-transform: uppercase;
 }
 
 .title {
@@ -180,9 +181,15 @@ html {
 
 .meters {
   display: flex;
-  gap: $spacing-md;
+  flex-direction: column;
+  gap: $spacing-xs;
   align-items: flex-end;
   margin-left: auto;
+}
+
+.meters__container {
+  display: flex;
+  gap: $spacing-xs;
 }
 
 .meter {
@@ -225,6 +232,7 @@ html {
     color: $text-secondary;
     margin-bottom: $spacing-xs;
     text-align: center;
+    text-transform: uppercase;
   }
 }
 

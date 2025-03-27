@@ -11,7 +11,7 @@ public:
 
     // Sample management
     void loadSample(const juce::File &file);
-    void loadDefaultSample();
+    void loadDefaultSamples();
     bool setSample(const juce::String &name);
     juce::StringArray getAvailableSamples() const;
     juce::String getCurrentSampleName() const;

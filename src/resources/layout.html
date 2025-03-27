@@ -28,10 +28,10 @@
             >
               zay_808
             </li>
+            <li class="sidebar__sample-item" data-sample="thick_spinz_808">
+              thick_spinz_808
+            </li>
           </ul>
-          <div id="addSampleButton" class="sidebar__add-button">
-            + Add Sample
-          </div>
         </div>
 
         <!-- Main Editor Panel -->
@@ -64,33 +64,36 @@
 
             <!-- Output Meters -->
             <div class="meters">
-              <div class="meter">
-                <div
-                  id="leftMeter"
-                  class="meter__level"
-                  style="height: 0%"
-                ></div>
-                <div class="meter__ticks">
-                  <div class="meter__tick"></div>
-                  <div class="meter__tick"></div>
-                  <div class="meter__tick"></div>
-                  <div class="meter__tick"></div>
+              <div class="meter__label">Out</div>
+
+              <div class="meters__container">
+                <div class="meter">
+                  <div
+                    id="leftMeter"
+                    class="meter__level"
+                    style="height: 0%"
+                  ></div>
+                  <div class="meter__ticks">
+                    <div class="meter__tick"></div>
+                    <div class="meter__tick"></div>
+                    <div class="meter__tick"></div>
+                    <div class="meter__tick"></div>
+                  </div>
+                </div>
+                <div class="meter">
+                  <div
+                    id="rightMeter"
+                    class="meter__level"
+                    style="height: 0%"
+                  ></div>
+                  <div class="meter__ticks">
+                    <div class="meter__tick"></div>
+                    <div class="meter__tick"></div>
+                    <div class="meter__tick"></div>
+                    <div class="meter__tick"></div>
+                  </div>
                 </div>
               </div>
-              <div class="meter">
-                <div
-                  id="rightMeter"
-                  class="meter__level"
-                  style="height: 0%"
-                ></div>
-                <div class="meter__ticks">
-                  <div class="meter__tick"></div>
-                  <div class="meter__tick"></div>
-                  <div class="meter__tick"></div>
-                  <div class="meter__tick"></div>
-                </div>
-              </div>
-              <div class="meter__label">Output</div>
             </div>
           </div>
         </div>
@@ -446,15 +449,6 @@
         }
       }
 
-      // Add sample button
-      function setupSampleBrowser() {
-        document
-          .getElementById("addSampleButton")
-          .addEventListener("click", function () {
-            window.valueChanged("sampler", "browseSample", "");
-          });
-      }
-
       // Initialize when document is loaded
       window.addEventListener("load", function () {
         // Initialize waveform display
@@ -483,7 +477,6 @@
 
         // Set up UI interactions
         setupKnobInteractions();
-        setupSampleBrowser();
 
         // Initialize UI with default values
         updateKnobUI();
