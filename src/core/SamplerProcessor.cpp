@@ -180,16 +180,35 @@ public:
                     {
                         releasePhase = true;
                     }
+
+                    // Loop playback position for visualization
+                    // This is crucial for seeing the full waveform
+                    localSourceSamplePosition = 0.0;
                 }
 
-                currentSamplePosition += 1.0;
+                // Update the current position for visualization
+                currentSamplePosition = (pos * 1.0) / audioData.getNumSamples() * audioData.getNumSamples();
             }
 
             this->sourceSamplePosition = localSourceSamplePosition;
         }
     }
 
-    double getCurrentSamplePosition() const { return currentSamplePosition; }
+    bool isVoiceActive() const
+    {
+        return getCurrentlyPlayingSound() != nullptr && !releasePhase;
+    }
+
+    // Current sample position as a percentage of the total length
+    double getCurrentSamplePosition() const
+    {
+        if (auto *sound = dynamic_cast<ProxySamplerSound *>(getCurrentlyPlayingSound().get()))
+        {
+            // Return current sample position as a proportion of the total sample length
+            return (sourceSamplePosition / sound->getAudioData().getNumSamples()) * sound->getAudioData().getNumSamples();
+        }
+        return 0.0;
+    }
 
 private:
     double currentSamplePosition;
@@ -303,9 +322,31 @@ void SamplerProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Midi
     }
 
     // Update current playback position for display purposes
-    if (auto *voice = dynamic_cast<ProxySamplerVoice *>(sampler->getVoice(0)))
+    // First, check if any voice is actually playing
+    bool anyVoicePlaying = false;
+    int updatedPosition = 0;
+
+    for (int i = 0; i < sampler->getNumVoices(); ++i)
     {
-        currentSamplePosition = static_cast<int>(voice->getCurrentSamplePosition());
+        if (auto *voice = dynamic_cast<ProxySamplerVoice *>(sampler->getVoice(i)))
+        {
+            if (voice->isVoiceActive())
+            {
+                updatedPosition = static_cast<int>(voice->getCurrentSamplePosition());
+                anyVoicePlaying = true;
+                break; // Only need to find one active voice
+            }
+        }
+    }
+
+    if (anyVoicePlaying)
+    {
+        currentSamplePosition = updatedPosition;
+    }
+    else
+    {
+        // If no voices are playing, we can just keep the last position
+        // or reset it to 0 depending on desired behavior
     }
 }
 

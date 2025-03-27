@@ -39,7 +39,13 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
             else if (params.startsWith("sample="))
             {
                 juce::String sampleName = params.fromFirstOccurrenceOf("sample=", false, true);
-                ownerView.samplerProcessor.setSample(sampleName);
+                bool success = ownerView.samplerProcessor.setSample(sampleName);
+
+                if (success)
+                {
+                    juce::Logger::writeToLog("Sample changed via UI to: " + sampleName);
+                    ownerView.updateWaveformDisplay(); // Update the waveform display directly
+                }
                 return false;
             }
             else if (params.startsWith("browseSample"))
@@ -56,7 +62,11 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
                                         auto result = fc.getResult();
                                         if (result.exists())
                                         {
+                                            juce::Logger::writeToLog("Loading sample from file: " + result.getFullPathName());
                                             ownerView.samplerProcessor.loadSample(result);
+
+                                            // Update waveform display after loading new sample
+                                            ownerView.updateWaveformDisplay();
                                         }
                                     });
 
@@ -127,10 +137,14 @@ LayoutView::LayoutView(SamplerProcessor &proc)
 
     // Load the combined HTML content
     webView->goToURL(juce::String("data:text/html;charset=utf-8,") + htmlContent);
+
+    // Start the timer for UI updates
+    startTimerHz(30);
 }
 
 LayoutView::~LayoutView()
 {
+    stopTimer();
     webView = nullptr;
 }
 
@@ -187,7 +201,7 @@ void LayoutView::updatePlaybackPosition(int position)
 
     try
     {
-        // Update waveform display in the WebView - fix string concatenation
+        // Update waveform display in the WebView
         juce::String script = juce::String("if (window.updatePlaybackPosition) { window.updatePlaybackPosition(") +
                               juce::String(position) + juce::String("); }");
 
@@ -197,6 +211,64 @@ void LayoutView::updatePlaybackPosition(int position)
     {
         // Log any errors for debugging
         juce::Logger::writeToLog("JavaScript error in waveform: " + juce::String(e.what()));
+    }
+}
+
+void LayoutView::updateWaveformDisplay()
+{
+    if (!pageLoaded)
+        return;
+
+    // Get current sample data
+    auto sampleName = samplerProcessor.getCurrentSampleName();
+    auto sampleData = samplerProcessor.getSampleLibrary().getSampleAudioBuffer(sampleName);
+
+    if (sampleData.buffer && sampleData.buffer->getNumSamples() > 0)
+    {
+        // We'll send a downsampled version of the waveform data to JavaScript
+        const int channelsToUse = juce::jmin(sampleData.buffer->getNumChannels(), 2);
+        const int numSamples = sampleData.buffer->getNumSamples();
+
+        // Max number of points to send (to keep JavaScript performant)
+        const int maxPoints = 1000;
+        const int skipFactor = juce::jmax(1, numSamples / maxPoints);
+
+        juce::String waveformData = "[";
+
+        for (int channel = 0; channel < channelsToUse; ++channel)
+        {
+            waveformData += "[";
+            const float *channelData = sampleData.buffer->getReadPointer(channel);
+
+            for (int i = 0; i < numSamples; i += skipFactor)
+            {
+                waveformData += juce::String(channelData[i]);
+
+                if (i + skipFactor < numSamples)
+                    waveformData += ",";
+            }
+
+            waveformData += "]";
+
+            if (channel < channelsToUse - 1)
+                waveformData += ",";
+        }
+
+        waveformData += "]";
+
+        // Send waveform data to JavaScript
+        juce::String script = "if (window.setWaveformData) { window.setWaveformData(" +
+                              waveformData + ", " +
+                              juce::String(numSamples) + "); }";
+
+        // Add a debug message to help track execution
+        juce::Logger::writeToLog("Sending waveform data: " + juce::String(numSamples) + " samples");
+
+        webView->evaluateJavascript(script);
+    }
+    else
+    {
+        juce::Logger::writeToLog("Sample data is invalid or empty");
     }
 }
 
@@ -240,6 +312,10 @@ void LayoutView::timerCallback()
                                          samplesJson + juce::String("); }");
 
             webView->evaluateJavascript(samplesScript);
+
+            // Initialize waveform display with current sample data
+            juce::Logger::writeToLog("Page loaded, initializing waveform display");
+            updateWaveformDisplay();
         }
 
         return;
@@ -267,6 +343,13 @@ void LayoutView::timerCallback()
                               "}); }";
 
         webView->evaluateJavascript(script);
+
+        // If the sample has changed, update the waveform display
+        if (sampleName != lastSampleName)
+        {
+            juce::Logger::writeToLog("Sample changed to: " + sampleName + ", updating waveform");
+            updateWaveformDisplay();
+        }
 
         lastAttackMs = attackMs;
         lastReleaseMs = releaseMs;

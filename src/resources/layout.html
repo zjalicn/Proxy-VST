@@ -119,6 +119,8 @@
           waveformHeight: 0,
           waveformWidth: 0,
           playbackPosition: 0,
+          totalSampleLength: 0, // Total length of the current sample
+          waveformData: null, // Actual sample data
         },
       };
 
@@ -216,6 +218,19 @@
         updateSampleSelection();
       };
 
+      // New function to receive waveform data from C++
+      window.setWaveformData = function (data, totalSamples) {
+        console.log(
+          "Received waveform data with " +
+            data[0].length +
+            " points, total samples: " +
+            totalSamples
+        );
+        state.ui.waveformData = data;
+        state.ui.totalSampleLength = totalSamples;
+        drawWaveform();
+      };
+
       // Update sample selection in the sidebar
       function updateSampleSelection() {
         document.querySelectorAll(".sidebar__sample-item").forEach((item) => {
@@ -261,41 +276,99 @@
         state.ui.playbackPosition = position;
 
         if (waveformCanvas && playbackPositionElement) {
-          // Scale the position to the canvas width
-          const maxPosition = waveformCanvas.width;
-          const scaledPosition = state.ui.playbackPosition / 100; // Sample buffer size will vary
+          if (state.ui.totalSampleLength > 0) {
+            // Scale the position relative to the total sample length
+            const positionRatio = position / state.ui.totalSampleLength;
+            const canvasWidth = waveformCanvas.width;
 
-          const positionX = Math.min(scaledPosition * maxPosition, maxPosition);
-          playbackPositionElement.style.left = `${positionX}px`;
+            // Calculate the position in pixels
+            const positionX = Math.min(
+              positionRatio * canvasWidth,
+              canvasWidth
+            );
+            playbackPositionElement.style.left = `${positionX}px`;
+          } else {
+            // If we don't have sample length yet, use a simple percentage scale
+            // Assuming position is between 0-100
+            const positionPercentage = Math.min(position / 100, 1.0);
+            const canvasWidth = waveformCanvas.width;
+            const positionX = positionPercentage * canvasWidth;
+            playbackPositionElement.style.left = `${positionX}px`;
+          }
         }
       };
 
-      // Draw waveform (placeholder - would need actual sample data)
+      // Draw waveform with actual sample data
       function drawWaveform() {
         if (!waveformContext) return;
 
         const width = waveformCanvas.width;
         const height = waveformCanvas.height;
+        const centerY = height / 2;
 
         // Clear the canvas
         waveformContext.clearRect(0, 0, width, height);
 
-        // Draw placeholder waveform
-        waveformContext.strokeStyle = "#00bcd4";
-        waveformContext.lineWidth = 2;
-        waveformContext.beginPath();
+        // If we don't have actual waveform data yet, draw a placeholder
+        if (!state.ui.waveformData) {
+          console.log("No waveform data available, drawing placeholder");
 
-        // Draw a simple sine wave as placeholder
-        for (let x = 0; x < width; x++) {
-          const y = height / 2 + Math.sin(x / 20) * (height / 4);
-          if (x === 0) {
-            waveformContext.moveTo(x, y);
-          } else {
-            waveformContext.lineTo(x, y);
+          // Draw placeholder waveform
+          waveformContext.strokeStyle = "#00bcd4";
+          waveformContext.lineWidth = 2;
+          waveformContext.beginPath();
+
+          // Draw a simple sine wave as placeholder
+          for (let x = 0; x < width; x++) {
+            const y = height / 2 + Math.sin(x / 20) * (height / 4);
+            if (x === 0) {
+              waveformContext.moveTo(x, y);
+            } else {
+              waveformContext.lineTo(x, y);
+            }
           }
+
+          waveformContext.stroke();
+          return;
         }
 
-        waveformContext.stroke();
+        console.log("Drawing actual waveform data");
+
+        // Get waveform data
+        const waveformData = state.ui.waveformData;
+        const numChannels = waveformData.length;
+
+        // Calculate scaling factors
+        const amplitudeScale = height / 3; // Scale amplitude to 1/3 of height
+
+        // Draw each channel
+        for (let channel = 0; channel < numChannels; channel++) {
+          const channelData = waveformData[channel];
+          const pointsCount = channelData.length;
+
+          // Set color based on channel (left/right)
+          waveformContext.strokeStyle = channel === 0 ? "#00bcd4" : "#4dd0e1";
+          waveformContext.lineWidth = 2;
+          waveformContext.beginPath();
+
+          // Calculate x-coordinate step size
+          const xStep = width / pointsCount;
+
+          // Draw the waveform
+          for (let i = 0; i < pointsCount; i++) {
+            const x = i * xStep;
+            // Scale the amplitude value (-1 to 1) to canvas height
+            const y = centerY - channelData[i] * amplitudeScale;
+
+            if (i === 0) {
+              waveformContext.moveTo(x, y);
+            } else {
+              waveformContext.lineTo(x, y);
+            }
+          }
+
+          waveformContext.stroke();
+        }
       }
 
       // Set up knob interactions

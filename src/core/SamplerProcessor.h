@@ -36,6 +36,9 @@ public:
     float getRelease() const { return releaseTimeMs; }
     float getGain() const { return gain; }
 
+    // Get access to the sample library
+    const SampleLibrary &getSampleLibrary() const { return sampleLibrary; }
+
 private:
     // Sample managers
     SampleLibrary sampleLibrary;

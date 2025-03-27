@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 #include "SamplerProcessor.h"
 
-class LayoutView : public juce::Component
+class LayoutView : public juce::Component, private juce::Timer
 {
 public:
     LayoutView(SamplerProcessor &samplerProcessor);
@@ -17,6 +17,9 @@ public:
 
     // Update UI with current playback position
     void updatePlaybackPosition(int position);
+
+    // Update waveform display with actual sample data
+    void updateWaveformDisplay();
 
     // Custom web view that handles our custom URL scheme
     class LayoutMessageHandler : public juce::WebBrowserComponent
@@ -46,7 +49,7 @@ private:
     juce::String lastSampleName;
 
     // Timer for UI updates
-    void timerCallback();
+    void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LayoutView)
 };

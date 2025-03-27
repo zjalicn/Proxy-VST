@@ -29,6 +29,7 @@ juce_add_binary_data(ProxyResources
 
         # Samples
         src/resources/samples/zay_808.wav
+        src/resources/samples/thick_spinz_808.wav
 )
 
 add_dependencies(ProxyResources CompileSCSS)
