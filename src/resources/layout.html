@@ -150,7 +150,8 @@
         try {
           let url;
           if (module === "sampler") {
-            url = "proxy:sampler:" + param + "=" + value;
+            const encodedValue = encodeURIComponent(value);
+            url = "proxy:sampler:" + param + "=" + encodedValue;
           } else {
             url = "proxy:" + param + "=" + value;
           }

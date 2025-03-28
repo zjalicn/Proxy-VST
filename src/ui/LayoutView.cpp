@@ -39,6 +39,8 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
             else if (params.startsWith("sample="))
             {
                 juce::String sampleName = params.fromFirstOccurrenceOf("sample=", false, true);
+                sampleName = juce::URL::removeEscapeChars(sampleName);
+
                 bool success = ownerView.samplerProcessor.setSample(sampleName);
 
                 if (success)
@@ -242,7 +244,9 @@ void LayoutView::updateSamplesList()
 
     for (int i = 0; i < samples.size(); ++i)
     {
-        samplesJson += "\"" + samples[i] + "\"";
+        // Ensure proper JSON encoding of the sample name with escaped quotes
+        juce::String jsonEscapedName = samples[i].replace("\\", "\\\\").replace("\"", "\\\"");
+        samplesJson += "\"" + jsonEscapedName + "\"";
         if (i < samples.size() - 1)
             samplesJson += ",";
     }
@@ -324,7 +328,7 @@ void LayoutView::timerCallback()
                                   juce::String("attack: ") + juce::String(lastAttackMs) + juce::String(", ") +
                                   juce::String("release: ") + juce::String(lastReleaseMs) + juce::String(", ") +
                                   juce::String("gain: ") + juce::String(lastGain) + juce::String(", ") +
-                                  juce::String("sampleName: '") + lastSampleName + juce::String("'") +
+                                  juce::String("sampleName: '") + lastSampleName.replace("'", "\\'") + juce::String("'") +
                                   "}); }";
 
             webView->evaluateJavascript(script);
@@ -352,12 +356,15 @@ void LayoutView::timerCallback()
 
     if (paramsChanged)
     {
+        // Escape any quotes in the sample name for JavaScript
+        juce::String escapedSampleName = sampleName.replace("'", "\\'");
+
         // Update sampler UI with current values - fix string concatenation
         juce::String script = juce::String("if (window.updateSamplerControls) { window.updateSamplerControls({") +
                               juce::String("attack: ") + juce::String(attackMs) + juce::String(", ") +
                               juce::String("release: ") + juce::String(releaseMs) + juce::String(", ") +
                               juce::String("gain: ") + juce::String(gain) + juce::String(", ") +
-                              juce::String("sampleName: '") + sampleName + juce::String("'") +
+                              juce::String("sampleName: '") + escapedSampleName + juce::String("'") +
                               "}); }";
 
         webView->evaluateJavascript(script);

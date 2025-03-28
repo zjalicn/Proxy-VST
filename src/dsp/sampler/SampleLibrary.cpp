@@ -159,6 +159,7 @@ bool SampleLibrary::scanFolderForSamples(const juce::File &folder)
     juce::Array<juce::File> audioFiles;
     const int maxFilesToScan = 200; // Reasonable limit to prevent excessive scanning
 
+    // Use a more complete wildcard pattern and explicitly set recursive flag to false
     folder.findChildFiles(audioFiles, juce::File::findFiles, false, "*.wav;*.aif;*.aiff;*.mp3");
 
     // Limit the number of files for performance
@@ -170,6 +171,7 @@ bool SampleLibrary::scanFolderForSamples(const juce::File &folder)
     // Load each audio file
     for (const auto &file : audioFiles)
     {
+        // Get the name without extension (properly handles spaces in filenames)
         juce::String name = file.getFileNameWithoutExtension();
 
         // Skip if we already have a sample with this name
