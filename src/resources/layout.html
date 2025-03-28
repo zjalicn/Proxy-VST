@@ -105,6 +105,15 @@
               <div class="knob__label">Release</div>
             </div>
 
+            <!-- Monophonic Toggle -->
+            <div class="control-group">
+              <label class="toggle-switch">
+                <input type="checkbox" id="monophonicToggle" />
+                <span class="toggle-slider"></span>
+              </label>
+              <div class="knob__label">Mono</div>
+            </div>
+
             <!-- Output Meters -->
             <div class="meters">
               <div class="meter__label">Out</div>
@@ -156,6 +165,7 @@
         parameters: {
           attack: 5.0,
           release: 100.0,
+          monophonic: false,
         },
         ui: {
           isDragging: false,
@@ -212,6 +222,15 @@
 
         updateKnobUI();
         updateSampleSelection();
+      };
+
+      // Update monophonic toggle state
+      window.updateMonophonicState = function (isMonophonic) {
+        const toggle = document.getElementById("monophonicToggle");
+        if (toggle) {
+          toggle.checked = isMonophonic;
+          state.parameters.monophonic = isMonophonic;
+        }
       };
 
       // Update the sample list
@@ -525,6 +544,14 @@
               },
               { once: true }
             );
+          });
+
+        // Monophonic toggle
+        document
+          .getElementById("monophonicToggle")
+          .addEventListener("change", function () {
+            window.valueChanged("sampler", "monophonic", this.checked ? 1 : 0);
+            state.parameters.monophonic = this.checked;
           });
       }
 

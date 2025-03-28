@@ -49,7 +49,8 @@ public:
           releaseRate(0.0),
           attackPhase(false),
           releasePhase(false),
-          envelopeLevel(0.0)
+          envelopeLevel(0.0),
+          fadingSamplePosition(-1)
     {
     }
 
@@ -66,6 +67,22 @@ public:
         {
             // Calculate pitch ratio based on the difference between the played MIDI note and middle C (60)
             pitchRatio = std::pow(2.0, (midiNoteNumber - 60) / 12.0);
+
+            // If we are already playing and being reused (monophonic mode), start a crossfade
+            if (getCurrentlyPlayingSound() != nullptr && !releasePhase)
+            {
+                // Save current position for crossfade
+                fadingSamplePosition = sourceSamplePosition;
+                fadingEnvelopeLevel = envelopeLevel;
+                fadeOutCounter = 0;
+                isFading = true;
+            }
+            else
+            {
+                isFading = false;
+                fadingSamplePosition = -1;
+            }
+
             sourceSamplePosition = 0.0;
             lgain = velocity;
             rgain = velocity;
@@ -125,8 +142,13 @@ public:
             // Save the current position to a local variable
             double localSourceSamplePosition = this->sourceSamplePosition;
 
+            // For crossfading
+            double localFadingSamplePosition = this->fadingSamplePosition;
+            const double FADE_TIME_SAMPLES = 300.0; // Crossfade over a short time to avoid clicks
+
             while (--numSamples >= 0)
             {
+                // Process the new note
                 auto pos = (int)localSourceSamplePosition;
                 auto alpha = (float)(localSourceSamplePosition - pos);
                 auto invAlpha = 1.0f - alpha;
@@ -157,12 +179,57 @@ public:
                 }
 
                 float l = (inL[pos] * invAlpha + inL[nextPos] * alpha) * (float)envelopeLevel;
+                float r = inR != nullptr ? (inR[pos] * invAlpha + inR[nextPos] * alpha) * (float)envelopeLevel : l;
 
+                // Apply crossfade if needed (for monophonic mode)
+                if (isFading && localFadingSamplePosition >= 0)
+                {
+                    // Calculate position for fading note
+                    auto fadingPos = (int)localFadingSamplePosition;
+                    auto fadingAlpha = (float)(localFadingSamplePosition - fadingPos);
+                    auto fadingInvAlpha = 1.0f - fadingAlpha;
+
+                    // Simple linear interpolation for fading note
+                    int fadingNextPos = fadingPos + 1;
+                    if (fadingNextPos >= audioData.getNumSamples())
+                        fadingNextPos = fadingPos;
+
+                    // Calculate fade out factor (linear fade)
+                    float fadeOutFactor = juce::jmax(0.0f, (float)(1.0 - (fadeOutCounter / FADE_TIME_SAMPLES)));
+                    fadeOutCounter++;
+
+                    if (fadeOutFactor > 0.0f)
+                    {
+                        // Apply the fading envelope
+                        float fadingEnvelope = fadingEnvelopeLevel * fadeOutFactor;
+
+                        // Get samples for the fading note
+                        float fadingL = (inL[fadingPos] * fadingInvAlpha + inL[fadingNextPos] * fadingAlpha) * fadingEnvelope;
+                        float fadingR = inR != nullptr ? (inR[fadingPos] * fadingInvAlpha + inR[fadingNextPos] * fadingAlpha) * fadingEnvelope
+                                                       : fadingL;
+
+                        // Mix the fading note with the current note
+                        l += fadingL;
+                        r += fadingR;
+
+                        // Update the fading position
+                        localFadingSamplePosition += pitchRatio;
+                        if (localFadingSamplePosition >= audioData.getNumSamples() || fadeOutCounter >= FADE_TIME_SAMPLES)
+                        {
+                            isFading = false;
+                            localFadingSamplePosition = -1;
+                        }
+                    }
+                    else
+                    {
+                        isFading = false;
+                        localFadingSamplePosition = -1;
+                    }
+                }
+
+                // Apply the final gain
                 if (outR != nullptr)
                 {
-                    float r = inR != nullptr ? (inR[pos] * invAlpha + inR[nextPos] * alpha) * (float)envelopeLevel
-                                             : l;
-
                     *outL++ += l * lgain;
                     *outR++ += r * rgain;
                 }
@@ -191,6 +258,7 @@ public:
             }
 
             this->sourceSamplePosition = localSourceSamplePosition;
+            this->fadingSamplePosition = localFadingSamplePosition;
         }
     }
 
@@ -221,13 +289,20 @@ private:
     double attackRate, releaseRate;
     bool attackPhase, releasePhase;
     double envelopeLevel;
+
+    // For smooth crossfading in monophonic mode
+    double fadingSamplePosition;
+    double fadingEnvelopeLevel;
+    double fadeOutCounter;
+    bool isFading;
 };
 
 SamplerProcessor::SamplerProcessor()
     : currentSamplePosition(0),
       attackTimeMs(5.0f),    // 5ms default attack
       releaseTimeMs(100.0f), // 100ms default release
-      gain(1.0f)
+      gain(1.0f),
+      monophonic(false) // Default to polyphonic
 {
     sampler = std::make_unique<juce::Synthesiser>();
 
@@ -396,6 +471,22 @@ void SamplerProcessor::handleMidiEvent(const juce::MidiMessage &midiMessage)
     {
         if (midiMessage.isNoteOn())
         {
+            // If monophonic mode is enabled, stop all playing notes with a proper tail-off
+            // so we can smoothly crossfade to the new note
+            if (monophonic)
+            {
+                for (int i = 0; i < sampler->getNumVoices(); ++i)
+                {
+                    auto *voice = sampler->getVoice(i);
+                    if (voice->isPlayingChannel(midiMessage.getChannel()) &&
+                        voice->isVoiceActive())
+                    {
+                        // Use true for allowTailOff to get a smooth transition
+                        voice->stopNote(1.0f, true);
+                    }
+                }
+            }
+
             sampler->noteOn(midiMessage.getChannel(),
                             midiMessage.getNoteNumber(),
                             midiMessage.getFloatVelocity());
@@ -429,6 +520,57 @@ void SamplerProcessor::setRelease(float newReleaseTimeMs)
 void SamplerProcessor::setGain(float newGain)
 {
     gain = newGain;
+}
+
+void SamplerProcessor::setMonophonic(bool isMonophonic)
+{
+    // Only process if the state actually changed
+    if (monophonic != isMonophonic)
+    {
+        monophonic = isMonophonic;
+
+        // When switching to monophonic mode, we don't need to forcibly stop all notes
+        // The proper note handling will happen in handleMidiEvent when new notes are played
+    }
+}
+
+void SamplerProcessor::updateActiveVoices()
+{
+    // If in monophonic mode, make sure only one voice can be active
+    if (monophonic)
+    {
+        // Find the most recently activated voice
+        juce::SynthesiserVoice *activeVoice = nullptr;
+
+        for (int i = 0; i < sampler->getNumVoices(); ++i)
+        {
+            if (auto *voice = sampler->getVoice(i))
+            {
+                if (voice->isVoiceActive() && voice->getCurrentlyPlayingNote() > 0)
+                {
+                    if (activeVoice == nullptr)
+                    {
+                        activeVoice = voice;
+                    }
+                }
+            }
+        }
+
+        // Make sure only that voice is sounding
+        if (activeVoice != nullptr)
+        {
+            for (int i = 0; i < sampler->getNumVoices(); ++i)
+            {
+                if (auto *voice = sampler->getVoice(i))
+                {
+                    if (voice != activeVoice && voice->isVoiceActive())
+                    {
+                        voice->stopNote(0.0f, true); // Use smooth release
+                    }
+                }
+            }
+        }
+    }
 }
 
 void SamplerProcessor::updateVoiceParameters()

@@ -36,6 +36,12 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
                 ownerView.samplerProcessor.setGain(value);
                 return false;
             }
+            else if (params.startsWith("monophonic="))
+            {
+                bool value = params.fromFirstOccurrenceOf("monophonic=", false, true).getIntValue() != 0;
+                ownerView.samplerProcessor.setMonophonic(value);
+                return false;
+            }
             else if (params.startsWith("sample="))
             {
                 juce::String sampleName = params.fromFirstOccurrenceOf("sample=", false, true);
@@ -131,6 +137,7 @@ LayoutView::LayoutView(SamplerProcessor &proc)
       lastAttackMs(proc.getAttack()),
       lastReleaseMs(proc.getRelease()),
       lastGain(proc.getGain()),
+      lastMonophonic(proc.isMonophonic()),
       lastSampleName(proc.getCurrentSampleName())
 {
     auto browser = new LayoutMessageHandler(*this);
@@ -155,14 +162,88 @@ LayoutView::LayoutView(SamplerProcessor &proc)
         "  <div id=\"playbackPosition7\" class=\"editor__waveform-progress\"></div>\n"
         "</div>");
 
-    // Add CSS for playheads
-    cssContent += "\n\n/* Multiple Playheads Styling */\n"
-                  "#playheadsContainer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }\n"
-                  ".editor__waveform-progress { display: none; }\n";
+    // Add monophonic toggle to the controls section
+    htmlContent = htmlContent.replace(
+        "<!-- Output Meters -->",
+        "<!-- Monophonic Toggle -->\n"
+        "            <div class=\"control-group\">\n"
+        "              <label class=\"toggle-switch\">\n"
+        "                <input type=\"checkbox\" id=\"monophonicToggle\">\n"
+        "                <span class=\"toggle-slider\"></span>\n"
+        "              </label>\n"
+        "              <div class=\"knob__label\">Mono</div>\n"
+        "            </div>\n\n"
+        "            <!-- Output Meters -->");
+
+    // Add CSS for the toggle switch
+    cssContent += "\n\n/* Toggle Switch */\n"
+                  ".toggle-switch {\n"
+                  "  position: relative;\n"
+                  "  display: inline-block;\n"
+                  "  width: 40px;\n"
+                  "  height: 20px;\n"
+                  "}\n"
+                  ".toggle-switch input {\n"
+                  "  opacity: 0;\n"
+                  "  width: 0;\n"
+                  "  height: 0;\n"
+                  "}\n"
+                  ".toggle-slider {\n"
+                  "  position: absolute;\n"
+                  "  cursor: pointer;\n"
+                  "  top: 0;\n"
+                  "  left: 0;\n"
+                  "  right: 0;\n"
+                  "  bottom: 0;\n"
+                  "  background-color: rgba(255, 255, 255, 0.1);\n"
+                  "  transition: .4s;\n"
+                  "  border-radius: 34px;\n"
+                  "}\n"
+                  ".toggle-slider:before {\n"
+                  "  position: absolute;\n"
+                  "  content: \"\";\n"
+                  "  height: 16px;\n"
+                  "  width: 16px;\n"
+                  "  left: 3px;\n"
+                  "  bottom: 2px;\n"
+                  "  background-color: white;\n"
+                  "  transition: .4s;\n"
+                  "  border-radius: 50%;\n"
+                  "}\n"
+                  "input:checked + .toggle-slider {\n"
+                  "  background-color: #00bcd4;\n"
+                  "}\n"
+                  "input:focus + .toggle-slider {\n"
+                  "  box-shadow: 0 0 1px #00bcd4;\n"
+                  "}\n"
+                  "input:checked + .toggle-slider:before {\n"
+                  "  transform: translateX(18px);\n"
+                  "}\n";
 
     htmlContent = htmlContent.replace(
         "<link rel=\"stylesheet\" href=\"./layout.css\" />",
         "<style>\n" + cssContent + "\n    </style>");
+
+    // Add JavaScript for monophonic toggle
+    juce::String monophonicToggleScript = R"(
+    // Add event listener for monophonic toggle
+    document.addEventListener('DOMContentLoaded', function() {
+      const monophonicToggle = document.getElementById('monophonicToggle');
+      if (monophonicToggle) {
+        monophonicToggle.addEventListener('change', function() {
+          window.valueChanged("sampler", "monophonic", this.checked ? 1 : 0);
+        });
+      }
+    });
+
+    // Update monophonic toggle state
+    window.updateMonophonicState = function(isMonophonic) {
+      const toggle = document.getElementById('monophonicToggle');
+      if (toggle) {
+        toggle.checked = isMonophonic;
+      }
+    };
+    )";
 
     // Add JavaScript for handling multiple playheads
     juce::String multiplePlayheadsScript = R"(
@@ -205,11 +286,11 @@ LayoutView::LayoutView(SamplerProcessor &proc)
     };
     )";
 
-    // Insert the script just before the closing </script> tag
+    // Insert the scripts just before the closing </script> tag
     size_t scriptEndPos = htmlContent.lastIndexOf("</script>");
     if (scriptEndPos != -1)
     {
-        htmlContent = htmlContent.replaceSection(scriptEndPos, 0, multiplePlayheadsScript);
+        htmlContent = htmlContent.replaceSection(scriptEndPos, 0, monophonicToggleScript + multiplePlayheadsScript);
     }
 
     // Load the combined HTML content
@@ -444,6 +525,11 @@ void LayoutView::timerCallback()
 
             webView->evaluateJavascript(script);
 
+            // Initialize monophonic toggle
+            juce::String monoScript = juce::String("if (window.updateMonophonicState) { window.updateMonophonicState(") +
+                                      (lastMonophonic ? "true" : "false") + juce::String("); }");
+            webView->evaluateJavascript(monoScript);
+
             // Update the samples list
             updateSamplesList();
 
@@ -458,11 +544,13 @@ void LayoutView::timerCallback()
     float attackMs = samplerProcessor.getAttack();
     float releaseMs = samplerProcessor.getRelease();
     float gain = samplerProcessor.getGain();
+    bool monophonic = samplerProcessor.isMonophonic();
     juce::String sampleName = samplerProcessor.getCurrentSampleName();
 
     bool paramsChanged = std::abs(attackMs - lastAttackMs) > 0.01f ||
                          std::abs(releaseMs - lastReleaseMs) > 0.01f ||
                          std::abs(gain - lastGain) > 0.01f ||
+                         monophonic != lastMonophonic ||
                          sampleName != lastSampleName;
 
     if (paramsChanged)
@@ -480,6 +568,14 @@ void LayoutView::timerCallback()
 
         webView->evaluateJavascript(script);
 
+        // Update monophonic toggle if changed
+        if (monophonic != lastMonophonic)
+        {
+            juce::String monoScript = juce::String("if (window.updateMonophonicState) { window.updateMonophonicState(") +
+                                      (monophonic ? "true" : "false") + juce::String("); }");
+            webView->evaluateJavascript(monoScript);
+        }
+
         // If the sample has changed, update the waveform display
         if (sampleName != lastSampleName)
         {
@@ -489,6 +585,7 @@ void LayoutView::timerCallback()
         lastAttackMs = attackMs;
         lastReleaseMs = releaseMs;
         lastGain = gain;
+        lastMonophonic = monophonic;
         lastSampleName = sampleName;
     }
 

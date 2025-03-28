@@ -49,10 +49,13 @@ public:
     void setAttack(float attackTimeMs);
     void setRelease(float releaseTimeMs);
     void setGain(float newGain);
+    void setMonophonic(bool isMonophonic);
+    void updateActiveVoices();
 
     float getAttack() const { return attackTimeMs; }
     float getRelease() const { return releaseTimeMs; }
     float getGain() const { return gain; }
+    bool isMonophonic() const { return monophonic; }
 
     // Get access to the sample library
     const SampleLibrary &getSampleLibrary() const { return sampleLibrary; }
@@ -73,6 +76,7 @@ private:
     float attackTimeMs;
     float releaseTimeMs;
     float gain;
+    bool monophonic;
 
     // Voice management
     void updateVoiceParameters();

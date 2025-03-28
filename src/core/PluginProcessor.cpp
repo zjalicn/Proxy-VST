@@ -6,7 +6,8 @@ ProxyAudioProcessor::ProxyAudioProcessor()
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       attackTimeMs(5.0f),
       releaseTimeMs(100.0f),
-      gainValue(1.0f)
+      gainValue(1.0f),
+      monophonic(false)
 {
     // Initialize level meters
     levelLeft.reset(getSampleRate(), 0.1); // Smooth over 100ms
@@ -16,6 +17,7 @@ ProxyAudioProcessor::ProxyAudioProcessor()
     samplerProcessor.setAttack(attackTimeMs);
     samplerProcessor.setRelease(releaseTimeMs);
     samplerProcessor.setGain(gainValue);
+    samplerProcessor.setMonophonic(monophonic);
 }
 
 ProxyAudioProcessor::~ProxyAudioProcessor()
@@ -143,6 +145,7 @@ void ProxyAudioProcessor::getStateInformation(juce::MemoryBlock &destData)
     stream.writeFloat(samplerProcessor.getAttack());
     stream.writeFloat(samplerProcessor.getRelease());
     stream.writeFloat(samplerProcessor.getGain());
+    stream.writeBool(samplerProcessor.isMonophonic());
 
     // Save currently selected sample name
     stream.writeString(samplerProcessor.getCurrentSampleName());
@@ -156,17 +159,19 @@ void ProxyAudioProcessor::setStateInformation(const void *data, int sizeInBytes)
     // Check how much data we have available
     const int bytesAvailable = stream.getNumBytesRemaining();
 
-    if (bytesAvailable >= sizeof(float) * 3 + sizeof(int))
+    if (bytesAvailable >= sizeof(float) * 3 + sizeof(bool) + sizeof(int))
     {
         // Load basic parameters
         float attack = stream.readFloat();
         float release = stream.readFloat();
         float gain = stream.readFloat();
+        bool isMonophonic = stream.readBool();
 
         // Set the parameters to the sampler
         samplerProcessor.setAttack(attack);
         samplerProcessor.setRelease(release);
         samplerProcessor.setGain(gain);
+        samplerProcessor.setMonophonic(isMonophonic);
 
         // Load sample name
         juce::String sampleName = stream.readString();

@@ -49,6 +49,7 @@ private:
     float attackTimeMs;
     float releaseTimeMs;
     float gainValue;
+    bool monophonic;
 
     // Level metering
     juce::LinearSmoothedValue<float> levelLeft, levelRight;

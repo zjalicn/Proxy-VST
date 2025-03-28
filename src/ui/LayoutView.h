@@ -56,6 +56,7 @@ private:
     float lastAttackMs;
     float lastReleaseMs;
     float lastGain;
+    bool lastMonophonic;
     juce::String lastSampleName;
 
     // Timer for UI updates
