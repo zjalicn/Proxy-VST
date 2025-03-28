@@ -288,28 +288,47 @@ void LayoutView::updateSamplesList()
     if (!pageLoaded)
         return;
 
-    // Get the list of available samples
-    juce::StringArray samples = samplerProcessor.getAvailableSamples();
+    // Get categorized samples data
+    const SampleLibrary &library = samplerProcessor.getSampleLibrary();
+    juce::StringArray categories = library.getCategories();
 
-    // Create the JSON string array
-    juce::String samplesJson = "[";
+    // Create JSON structure for categories and their samples
+    juce::String categoryDataJson = "[";
 
-    for (int i = 0; i < samples.size(); ++i)
+    for (int i = 0; i < categories.size(); ++i)
     {
-        // Ensure proper JSON encoding of the sample name with escaped quotes
-        juce::String jsonEscapedName = samples[i].replace("\\", "\\\\").replace("\"", "\\\"");
-        samplesJson += "\"" + jsonEscapedName + "\"";
-        if (i < samples.size() - 1)
-            samplesJson += ",";
+        const juce::String &category = categories[i];
+        juce::StringArray samplesInCategory = library.getSamplesInCategory(category);
+
+        // Only include categories with samples
+        if (samplesInCategory.size() > 0)
+        {
+            juce::String categoryJson = "{\"name\":\"" + juce::String(category).replace("\\", "\\\\").replace("\"", "\\\"") + "\",\"samples\":[";
+
+            for (int j = 0; j < samplesInCategory.size(); ++j)
+            {
+                // Properly escape sample names for JSON
+                juce::String sampleName = samplesInCategory[j].replace("\\", "\\\\").replace("\"", "\\\"");
+                categoryJson += "\"" + sampleName + "\"";
+                if (j < samplesInCategory.size() - 1)
+                    categoryJson += ",";
+            }
+
+            categoryJson += "]}";
+
+            categoryDataJson += categoryJson;
+            if (i < categories.size() - 1)
+                categoryDataJson += ",";
+        }
     }
 
-    samplesJson += "]";
+    categoryDataJson += "]";
 
-    // Update the samples list in the web view
-    juce::String samplesScript = juce::String("if (window.updateSamplesList) { window.updateSamplesList(") +
-                                 samplesJson + juce::String("); }");
+    // Send the categorized samples data to JavaScript
+    juce::String script = "if (window.updateCategorizedSamplesList) { window.updateCategorizedSamplesList(" +
+                          categoryDataJson + "); }";
 
-    webView->evaluateJavascript(samplesScript);
+    webView->evaluateJavascript(script);
 }
 
 void LayoutView::updateWaveformDisplay()

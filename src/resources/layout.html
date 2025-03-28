@@ -21,9 +21,18 @@
         <!-- Sidebar with Sample List -->
         <div class="sidebar">
           <div class="sidebar__title">Samples</div>
-          <ul id="sampleList" class="sidebar__sample-list">
-            <!-- Sample items will be dynamically added here -->
-          </ul>
+          <div id="categorizedSampleList" class="sidebar__categorized-samples">
+            <!-- Categories and sample items will be dynamically added here -->
+            <!-- Example structure:
+            <div class="sidebar__category">
+              <div class="sidebar__category-header">Category Name</div>
+              <ul class="sidebar__sample-list">
+                <li class="sidebar__sample-item">Sample 1</li>
+                <li class="sidebar__sample-item">Sample 2</li>
+              </ul>
+            </div>
+            -->
+          </div>
 
           <!-- Add a message element that will be shown when no samples are found -->
           <div
@@ -233,16 +242,22 @@
         }
       };
 
-      // Update the sample list
-      window.updateSamplesList = function (samples) {
-        const sampleList = document.getElementById("sampleList");
+      // Update the sample list with categorized samples
+      window.updateCategorizedSamplesList = function (categoryData) {
+        const container = document.getElementById("categorizedSampleList");
         const noSamplesMessage = document.getElementById("noSamplesMessage");
 
-        // Clear the list
-        sampleList.innerHTML = "";
+        // Clear the container
+        container.innerHTML = "";
+
+        // Check if we have any samples
+        let totalSamples = 0;
+        for (const category of categoryData) {
+          totalSamples += category.samples.length;
+        }
 
         // If no samples, show the message and return
-        if (!samples || samples.length === 0) {
+        if (totalSamples === 0) {
           if (noSamplesMessage) {
             noSamplesMessage.style.display = "block";
           }
@@ -254,32 +269,66 @@
           noSamplesMessage.style.display = "none";
         }
 
-        samples.forEach((sample) => {
-          const li = document.createElement("li");
-          li.className = "sidebar__sample-item";
-          li.dataset.sample = sample;
-          li.textContent = sample;
+        // Create category sections
+        categoryData.forEach((category) => {
+          // Skip categories with no samples
+          if (category.samples.length === 0) return;
 
-          if (sample === state.samples.sampleName) {
-            li.classList.add("sidebar__sample-item--active");
-          }
+          // Create category container
+          const categoryDiv = document.createElement("div");
+          categoryDiv.className = "sidebar__category";
 
-          li.addEventListener("click", () => {
-            // Set the selected sample active
-            document
-              .querySelectorAll(".sidebar__sample-item")
-              .forEach((item) => {
-                item.classList.remove("sidebar__sample-item--active");
-              });
-            li.classList.add("sidebar__sample-item--active");
+          // Create category header
+          const categoryHeader = document.createElement("div");
+          categoryHeader.className = "sidebar__category-header";
+          categoryHeader.textContent = category.name;
+          categoryDiv.appendChild(categoryHeader);
 
-            // Update the state and send to C++
-            state.samples.sampleName = sample;
-            window.valueChanged("sampler", "sample", sample);
+          // Create sample list for this category
+          const sampleList = document.createElement("ul");
+          sampleList.className = "sidebar__sample-list";
+
+          // Create sample items
+          category.samples.forEach((sample) => {
+            const li = document.createElement("li");
+            li.className = "sidebar__sample-item";
+            li.dataset.sample = sample;
+            li.textContent = sample;
+
+            if (sample === state.samples.sampleName) {
+              li.classList.add("sidebar__sample-item--active");
+            }
+
+            li.addEventListener("click", () => {
+              // Set the selected sample active
+              document
+                .querySelectorAll(".sidebar__sample-item")
+                .forEach((item) => {
+                  item.classList.remove("sidebar__sample-item--active");
+                });
+              li.classList.add("sidebar__sample-item--active");
+
+              // Update the state and send to C++
+              state.samples.sampleName = sample;
+              window.valueChanged("sampler", "sample", sample);
+            });
+
+            sampleList.appendChild(li);
           });
 
-          sampleList.appendChild(li);
+          categoryDiv.appendChild(sampleList);
+          container.appendChild(categoryDiv);
         });
+
+        // Make category headers clickable to collapse/expand
+        document
+          .querySelectorAll(".sidebar__category-header")
+          .forEach((header) => {
+            header.addEventListener("click", function () {
+              const category = this.parentElement;
+              category.classList.toggle("sidebar__category--collapsed");
+            });
+          });
       };
 
       // Update UI with current parameter values (from C++)

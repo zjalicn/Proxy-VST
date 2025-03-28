@@ -85,9 +85,60 @@ html {
     letter-spacing: 1px;
   }
 
+  &__categorized-samples {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-md;
+  }
+
+  &__category {
+    &--collapsed {
+      .sidebar__sample-list {
+        display: none;
+      }
+
+      .sidebar__category-header::after {
+        transform: rotate(-90deg);
+      }
+    }
+  }
+
+  &__category-header {
+    font-size: $font-size-small;
+    font-weight: bold;
+    color: $primary-color;
+    margin-bottom: $spacing-xs;
+    padding: $spacing-xs;
+    background-color: rgba($primary-color, 0.1);
+    border-radius: $border-radius-sm;
+    cursor: pointer;
+    position: relative;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+
+    &::after {
+      content: "";
+      position: absolute;
+      right: $spacing-sm;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 5px solid $primary-color;
+      transition: transform $transition-quick;
+    }
+
+    &:hover {
+      background-color: rgba($primary-color, 0.15);
+    }
+  }
+
   &__sample-list {
     list-style: none;
-    margin-bottom: $spacing-md;
+    margin-bottom: $spacing-xs;
+    padding-left: $spacing-xs;
   }
 
   &__sample-item {
