@@ -433,3 +433,29 @@ void SamplerProcessor::updateVoiceParameters()
         }
     }
 }
+
+void SamplerProcessor::refreshSamples()
+{
+    // Get the current sample name (to restore selection if possible)
+    juce::String currentSample = getCurrentSampleName();
+
+    // Scan for samples
+    juce::StringArray samples = sampleLibrary.scanUserSamplesFolder();
+
+    // If no samples found, just return
+    if (samples.isEmpty())
+    {
+        return;
+    }
+
+    // Try to restore the previous sample selection
+    if (samples.contains(currentSample))
+    {
+        setSample(currentSample);
+    }
+    else
+    {
+        // If previous sample not found, use the first one
+        setSample(samples[0]);
+    }
+}

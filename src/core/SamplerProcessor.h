@@ -16,6 +16,9 @@ public:
     juce::StringArray getAvailableSamples() const;
     juce::String getCurrentSampleName() const;
 
+    // Refresh samples from folder
+    void refreshSamples();
+
     // AudioProcessor methods
     void prepareToPlay(double sampleRate, int samplesPerBlock);
     void processBlock(juce::AudioBuffer<float> &buffer, juce::MidiBuffer &midiMessages);

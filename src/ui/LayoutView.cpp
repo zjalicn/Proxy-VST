@@ -43,9 +43,20 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
 
                 if (success)
                 {
-                    juce::Logger::writeToLog("Sample changed via UI to: " + sampleName);
                     ownerView.updateWaveformDisplay(); // Update the waveform display directly
                 }
+                return false;
+            }
+            else if (params.startsWith("refreshSamples"))
+            {
+                ownerView.samplerProcessor.refreshSamples();
+
+                // Update the UI with the new samples list
+                ownerView.updateSamplesList();
+
+                // Also update the waveform for the current sample
+                ownerView.updateWaveformDisplay();
+
                 return false;
             }
             else if (params.startsWith("browseSample"))
@@ -62,7 +73,6 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
                                         auto result = fc.getResult();
                                         if (result.exists())
                                         {
-                                            juce::Logger::writeToLog("Loading sample from file: " + result.getFullPathName());
                                             ownerView.samplerProcessor.loadSample(result);
 
                                             // Update waveform display after loading new sample
@@ -92,8 +102,6 @@ bool LayoutView::LayoutMessageHandler::pageAboutToLoad(const juce::String &url)
 
             if (data != nullptr && size > 0)
             {
-                // Convert binary data to base64
-                // Fix: Cast size to size_t to avoid warning
                 juce::MemoryBlock mb(data, static_cast<size_t>(size));
                 juce::String base64 = mb.toBase64Encoding();
 
@@ -125,7 +133,6 @@ LayoutView::LayoutView(SamplerProcessor &proc)
 {
     auto browser = new LayoutMessageHandler(*this);
     webView.reset(browser);
-    // Update: Use the newer API to avoid deprecation warning
     webView->setFocusContainerType(juce::Component::FocusContainerType::none);
     addAndMakeVisible(webView.get());
 
@@ -156,9 +163,7 @@ LayoutView::~LayoutView()
 
 void LayoutView::paint(juce::Graphics &g)
 {
-    // Suppress unused parameter warning
     juce::ignoreUnused(g);
-    // Nothing to paint - WebView handles rendering
 }
 
 void LayoutView::resized()
@@ -298,14 +303,7 @@ void LayoutView::updateWaveformDisplay()
                               waveformData + ", " +
                               juce::String(numSamples) + "); }";
 
-        // Add a debug message to help track execution
-        juce::Logger::writeToLog("Sending waveform data: " + juce::String(numSamples) + " samples");
-
         webView->evaluateJavascript(script);
-    }
-    else
-    {
-        juce::Logger::writeToLog("Sample data is invalid or empty");
     }
 }
 
@@ -335,7 +333,6 @@ void LayoutView::timerCallback()
             updateSamplesList();
 
             // Initialize waveform display with current sample data
-            juce::Logger::writeToLog("Page loaded, initializing waveform display");
             updateWaveformDisplay();
         }
 
@@ -368,7 +365,6 @@ void LayoutView::timerCallback()
         // If the sample has changed, update the waveform display
         if (sampleName != lastSampleName)
         {
-            juce::Logger::writeToLog("Sample changed to: " + sampleName + ", updating waveform");
             updateWaveformDisplay();
         }
 
