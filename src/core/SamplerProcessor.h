@@ -3,9 +3,20 @@
 #include <JuceHeader.h>
 #include "SampleLibrary.h"
 
+// Structure to store voice playback positions
+struct VoicePosition
+{
+    int position;
+    bool isActive;
+
+    VoicePosition() : position(0), isActive(false) {}
+};
+
 class SamplerProcessor
 {
 public:
+    static constexpr int MAX_VOICES = 8;
+
     SamplerProcessor();
     ~SamplerProcessor();
 
@@ -31,6 +42,9 @@ public:
     int getCurrentPlaybackSamplePosition() const { return currentSamplePosition; }
     bool isAnyVoiceActive() const;
 
+    // Get all voice positions
+    const std::array<VoicePosition, MAX_VOICES> &getAllVoicePositions() const { return voicePositions; }
+
     // Parameters
     void setAttack(float attackTimeMs);
     void setRelease(float releaseTimeMs);
@@ -52,6 +66,9 @@ private:
     juce::String currentSampleName;
     int currentSamplePosition;
 
+    // Track positions for all voices
+    std::array<VoicePosition, MAX_VOICES> voicePositions;
+
     // Parameters
     float attackTimeMs;
     float releaseTimeMs;
@@ -59,6 +76,7 @@ private:
 
     // Voice management
     void updateVoiceParameters();
+    void updateVoicePositions();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SamplerProcessor)
 };

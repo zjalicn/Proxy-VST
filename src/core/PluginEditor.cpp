@@ -57,9 +57,6 @@ void ProxyAudioProcessorEditor::timerCallback()
     // Update the layout view
     layoutView.updateLevels(leftLevel, rightLevel);
 
-    // Get the current playing position and sample length
-    int currentPlaybackPosition = audioProcessor.getSamplerProcessor().getCurrentPlaybackSamplePosition();
-
-    // Update the waveform display with current playback position
-    layoutView.updatePlaybackPosition(currentPlaybackPosition);
+    // Update all voice positions
+    layoutView.updateAllPlaybackPositions();
 }

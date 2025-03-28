@@ -141,17 +141,86 @@ LayoutView::LayoutView(SamplerProcessor &proc)
     juce::String htmlContent = juce::String(BinaryData::layout_html, BinaryData::layout_htmlSize);
     juce::String cssContent = juce::String(BinaryData::layout_css, BinaryData::layout_cssSize);
 
+    // Update HTML content to include div containers for multiple playheads
+    htmlContent = htmlContent.replace(
+        "<div id=\"playbackPosition\" class=\"editor__waveform-progress\"></div>",
+        "<div id=\"playheadsContainer\">\n"
+        "  <div id=\"playbackPosition\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition1\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition2\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition3\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition4\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition5\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition6\" class=\"editor__waveform-progress\"></div>\n"
+        "  <div id=\"playbackPosition7\" class=\"editor__waveform-progress\"></div>\n"
+        "</div>");
+
+    // Add CSS for playheads
+    cssContent += "\n\n/* Multiple Playheads Styling */\n"
+                  "#playheadsContainer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }\n"
+                  ".editor__waveform-progress { display: none; }\n";
+
     htmlContent = htmlContent.replace(
         "<link rel=\"stylesheet\" href=\"./layout.css\" />",
         "<style>\n" + cssContent + "\n    </style>");
 
-    // Update playback position div to be hidden by default
-    htmlContent = htmlContent.replace(
-        "<div id=\"playbackPosition\" class=\"editor__waveform-progress\"></div>",
-        "<div id=\"playbackPosition\" class=\"editor__waveform-progress\" style=\"display: none;\"></div>");
+    // Add JavaScript for handling multiple playheads
+    juce::String multiplePlayheadsScript = R"(
+    // Handle multiple playheads
+    window.updateMultiplePlayheads = function(positions, totalSampleLength) {
+        // Base color for the first playhead (primary teal color)
+        const baseColor = [0, 188, 212]; // RGB for #00bcd4
+        
+        for (let i = 0; i < positions.length; i++) {
+            const position = positions[i];
+            const isActive = position.isActive;
+            const playheadElement = document.getElementById(i === 0 ? 'playbackPosition' : ('playbackPosition' + i));
+            
+            if (!playheadElement) continue;
+            
+            if (isActive) {
+                // Calculate position in pixels
+                const positionRatio = position.position / totalSampleLength;
+                const canvasWidth = document.getElementById('waveformDisplay').width;
+                const positionX = Math.min(positionRatio * canvasWidth, canvasWidth);
+                
+                // Set position
+                playheadElement.style.left = positionX + 'px';
+                
+                // Adjust color (each subsequent playhead gets lighter)
+                const opacity = 1.0 - (i * 0.1); // Reduce opacity slightly for each voice
+                const lightnessIncrease = i * 12; // Make each voice progressively lighter
+                
+                // Create RGB color with increasing lightness
+                const r = Math.min(255, baseColor[0] + lightnessIncrease);
+                const g = Math.min(255, baseColor[1] + lightnessIncrease);
+                const b = Math.min(255, baseColor[2]);
+                
+                playheadElement.style.backgroundColor = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+                playheadElement.style.display = 'block';
+            } else {
+                playheadElement.style.display = 'none';
+            }
+        }
+    };
+    )";
+
+    // Insert the script just before the closing </script> tag
+    size_t scriptEndPos = htmlContent.lastIndexOf("</script>");
+    if (scriptEndPos != -1)
+    {
+        htmlContent = htmlContent.replaceSection(scriptEndPos, 0, multiplePlayheadsScript);
+    }
 
     // Load the combined HTML content
     webView->goToURL(juce::String("data:text/html;charset=utf-8,") + htmlContent);
+
+    // Initialize voice positions array
+    for (auto &voicePos : lastVoicePositions)
+    {
+        voicePos.position = 0;
+        voicePos.isActive = false;
+    }
 
     // Start the timer for UI updates
     startTimerHz(30);
@@ -228,6 +297,48 @@ void LayoutView::updatePlaybackPosition(int position)
     {
         // Log any errors for debugging
         juce::Logger::writeToLog("JavaScript error in waveform: " + juce::String(e.what()));
+    }
+}
+
+void LayoutView::updateAllPlaybackPositions()
+{
+    if (!pageLoaded)
+        return;
+
+    // Get all voice positions from the sampler
+    const auto &voicePositions = samplerProcessor.getAllVoicePositions();
+
+    // Convert voice positions to JSON for JavaScript
+    juce::String positionsJson = "[";
+
+    for (int i = 0; i < SamplerProcessor::MAX_VOICES; ++i)
+    {
+        positionsJson += "{\"position\":" + juce::String(voicePositions[i].position) +
+                         ",\"isActive\":" + (voicePositions[i].isActive ? "true" : "false") + "}";
+
+        if (i < SamplerProcessor::MAX_VOICES - 1)
+            positionsJson += ",";
+    }
+
+    positionsJson += "]";
+
+    // Get sample data for the total length
+    auto sampleName = samplerProcessor.getCurrentSampleName();
+    auto sampleData = samplerProcessor.getSampleLibrary().getSampleAudioBuffer(sampleName);
+    int totalSampleLength = sampleData.buffer ? sampleData.buffer->getNumSamples() : 0;
+
+    // Call the JavaScript function to update all playheads
+    juce::String script = "if (window.updateMultiplePlayheads) { window.updateMultiplePlayheads(" +
+                          positionsJson + ", " + juce::String(totalSampleLength) + "); }";
+
+    try
+    {
+        webView->evaluateJavascript(script);
+    }
+    catch (const std::exception &e)
+    {
+        // Log any errors for debugging
+        juce::Logger::writeToLog("JavaScript error in multiple playheads: " + juce::String(e.what()));
     }
 }
 
@@ -381,17 +492,34 @@ void LayoutView::timerCallback()
         lastSampleName = sampleName;
     }
 
-    // Check if any voices are active
+    // Check for voice position changes
+    const auto &currentVoicePositions = samplerProcessor.getAllVoicePositions();
+    bool positionsChanged = false;
+
+    for (int i = 0; i < SamplerProcessor::MAX_VOICES; ++i)
+    {
+        if (currentVoicePositions[i].isActive != lastVoicePositions[i].isActive ||
+            (currentVoicePositions[i].isActive &&
+             currentVoicePositions[i].position != lastVoicePositions[i].position))
+        {
+            positionsChanged = true;
+            break;
+        }
+    }
+
+    // Update voice activity state
     bool currentlyActive = samplerProcessor.isAnyVoiceActive();
-    if (voicesActive != currentlyActive)
+    if (voicesActive != currentlyActive || positionsChanged)
     {
         voicesActive = currentlyActive;
 
-        // Update playback position visibility in JavaScript
-        juce::String visibilityScript =
-            "if (document.getElementById('playbackPosition')) { document.getElementById('playbackPosition').style.display = '" +
-            juce::String(voicesActive ? "block" : "none") + "'; }";
+        // Update all playback positions
+        updateAllPlaybackPositions();
 
-        webView->evaluateJavascript(visibilityScript);
+        // Update last positions
+        for (int i = 0; i < SamplerProcessor::MAX_VOICES; ++i)
+        {
+            lastVoicePositions[i] = currentVoicePositions[i];
+        }
     }
 }

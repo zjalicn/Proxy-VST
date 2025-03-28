@@ -232,9 +232,16 @@ SamplerProcessor::SamplerProcessor()
     sampler = std::make_unique<juce::Synthesiser>();
 
     // Add voices to the sampler
-    for (int i = 0; i < 16; ++i)
+    for (int i = 0; i < MAX_VOICES; ++i)
     {
         sampler->addVoice(new ProxySamplerVoice());
+    }
+
+    // Initialize voice positions
+    for (auto &voicePos : voicePositions)
+    {
+        voicePos.position = 0;
+        voicePos.isActive = false;
     }
 
     // Load the default samples
@@ -320,32 +327,38 @@ void SamplerProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Midi
         buffer.applyGain(gain);
     }
 
-    // Update current playback position for display purposes
-    // First, check if any voice is actually playing
-    bool anyVoicePlaying = false;
-    int updatedPosition = 0;
+    // Update voice positions for display purposes
+    updateVoicePositions();
+}
 
-    for (int i = 0; i < sampler->getNumVoices(); ++i)
+void SamplerProcessor::updateVoicePositions()
+{
+    // Reset all voice positions
+    for (auto &voicePos : voicePositions)
+    {
+        voicePos.isActive = false;
+    }
+
+    // Update positions for active voices
+    int activeVoiceCount = 0;
+
+    for (int i = 0; i < sampler->getNumVoices() && activeVoiceCount < MAX_VOICES; ++i)
     {
         if (auto *voice = dynamic_cast<ProxySamplerVoice *>(sampler->getVoice(i)))
         {
             if (voice->isVoiceActive())
             {
-                updatedPosition = static_cast<int>(voice->getCurrentSamplePosition());
-                anyVoicePlaying = true;
-                break; // Only need to find one active voice
+                voicePositions[activeVoiceCount].position = static_cast<int>(voice->getCurrentSamplePosition());
+                voicePositions[activeVoiceCount].isActive = true;
+                activeVoiceCount++;
             }
         }
     }
 
-    if (anyVoicePlaying)
+    // Store the position of the first voice (for backward compatibility)
+    if (activeVoiceCount > 0)
     {
-        currentSamplePosition = updatedPosition;
-    }
-    else
-    {
-        // If no voices are playing, we can just keep the last position
-        // or reset it to 0 depending on desired behavior
+        currentSamplePosition = voicePositions[0].position;
     }
 }
 

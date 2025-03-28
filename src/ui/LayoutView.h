@@ -18,6 +18,9 @@ public:
     // Update UI with current playback position
     void updatePlaybackPosition(int position);
 
+    // Update UI with all active voice positions
+    void updateAllPlaybackPositions();
+
     // Update waveform display with actual sample data
     void updateWaveformDisplay();
 
@@ -45,6 +48,9 @@ private:
     float lastLeftLevel, lastRightLevel;
     int lastPlaybackPosition;
     bool voicesActive;
+
+    // Store the last voice positions to check for changes
+    std::array<VoicePosition, SamplerProcessor::MAX_VOICES> lastVoicePositions;
 
     // Sampler parameters
     float lastAttackMs;
