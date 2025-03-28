@@ -78,6 +78,17 @@ private:
     float gain;
     bool monophonic;
 
+    // Monophonic mode tracking
+    int lastMonophonicNote;
+
+    // Anti-pop buffer for monophonic mode
+    juce::AudioBuffer<float> antiPopBuffer;
+    bool antiPopCaptured = false;
+
+    // Anti-pop methods
+    void captureAntiPopBuffer(const juce::AudioBuffer<float> &buffer);
+    void applyAntiPopProcessing(juce::AudioBuffer<float> &buffer);
+
     // Voice management
     void updateVoiceParameters();
     void updateVoicePositions();

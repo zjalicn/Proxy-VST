@@ -50,7 +50,9 @@ public:
           attackPhase(false),
           releasePhase(false),
           envelopeLevel(0.0),
-          fadingSamplePosition(-1)
+          currentMidiNote(-1),
+          sampleRate(44100.0), // Default sample rate
+          shouldKill(false)
     {
     }
 
@@ -68,31 +70,22 @@ public:
             // Calculate pitch ratio based on the difference between the played MIDI note and middle C (60)
             pitchRatio = std::pow(2.0, (midiNoteNumber - 60) / 12.0);
 
-            // If we are already playing and being reused (monophonic mode), start a crossfade
-            if (getCurrentlyPlayingSound() != nullptr && !releasePhase)
-            {
-                // Save current position for crossfade
-                fadingSamplePosition = sourceSamplePosition;
-                fadingEnvelopeLevel = envelopeLevel;
-                fadeOutCounter = 0;
-                isFading = true;
-            }
-            else
-            {
-                isFading = false;
-                fadingSamplePosition = -1;
-            }
+            // Store the MIDI note number
+            currentMidiNote = midiNoteNumber;
 
+            // Reset sample position for the new note
             sourceSamplePosition = 0.0;
+
+            // Apply velocity scaling
             lgain = velocity;
             rgain = velocity;
 
             // Reset envelope
             envelopeLevel = 0.0;
+
             attackPhase = true;
             releasePhase = false;
-
-            currentSamplePosition = 0.0;
+            shouldKill = false;
         }
         else
         {
@@ -109,18 +102,20 @@ public:
         }
         else
         {
-            clearCurrentNote();
+            shouldKill = true;
         }
     }
 
-    void setAttackRate(double sampleRate, double attackTimeMs)
+    void setAttackRate(double newSampleRate, double attackTimeMs)
     {
+        sampleRate = newSampleRate;
         attackSamples = sampleRate * (attackTimeMs / 1000.0);
         attackRate = attackSamples > 0 ? 1.0 / attackSamples : 1.0;
     }
 
-    void setReleaseRate(double sampleRate, double releaseTimeMs)
+    void setReleaseRate(double newSampleRate, double releaseTimeMs)
     {
+        sampleRate = newSampleRate;
         releaseSamples = sampleRate * (releaseTimeMs / 1000.0);
         releaseRate = releaseSamples > 0 ? 1.0 / releaseSamples : 1.0;
     }
@@ -130,6 +125,12 @@ public:
 
     void renderNextBlock(juce::AudioBuffer<float> &outputBuffer, int startSample, int numSamples) override
     {
+        if (shouldKill)
+        {
+            clearCurrentNote();
+            return;
+        }
+
         if (auto *playingSound = dynamic_cast<ProxySamplerSound *>(getCurrentlyPlayingSound().get()))
         {
             const juce::AudioBuffer<float> &audioData = playingSound->getAudioData();
@@ -139,132 +140,89 @@ public:
             float *outL = outputBuffer.getWritePointer(0, startSample);
             float *outR = outputBuffer.getNumChannels() > 1 ? outputBuffer.getWritePointer(1, startSample) : nullptr;
 
-            // Save the current position to a local variable
+            // Working copies of member variables for better performance
             double localSourceSamplePosition = this->sourceSamplePosition;
+            double localEnvelopeLevel = this->envelopeLevel;
+            bool localAttackPhase = this->attackPhase;
+            bool localReleasePhase = this->releasePhase;
 
-            // For crossfading
-            double localFadingSamplePosition = this->fadingSamplePosition;
-            const double FADE_TIME_SAMPLES = 300.0; // Crossfade over a short time to avoid clicks
-
-            while (--numSamples >= 0)
+            for (int sampleIndex = 0; sampleIndex < numSamples; ++sampleIndex)
             {
-                // Process the new note
-                auto pos = (int)localSourceSamplePosition;
-                auto alpha = (float)(localSourceSamplePosition - pos);
-                auto invAlpha = 1.0f - alpha;
+                // Current position in the sample
+                int pos = static_cast<int>(localSourceSamplePosition);
+                float alpha = static_cast<float>(localSourceSamplePosition - pos);
+                float invAlpha = 1.0f - alpha;
 
-                // Simple linear interpolation
+                // Safety check for position
+                if (pos >= audioData.getNumSamples() - 1)
+                {
+                    pos = audioData.getNumSamples() - 2;
+                    if (pos < 0)
+                        pos = 0;
+                }
                 int nextPos = pos + 1;
-                if (nextPos >= audioData.getNumSamples())
-                    nextPos = pos; // Avoid reading beyond the buffer
 
                 // Update envelope
-                if (attackPhase)
+                if (localAttackPhase)
                 {
-                    envelopeLevel += attackRate;
-                    if (envelopeLevel >= 1.0)
+                    localEnvelopeLevel += attackRate;
+                    if (localEnvelopeLevel >= 1.0)
                     {
-                        envelopeLevel = 1.0;
-                        attackPhase = false;
+                        localEnvelopeLevel = 1.0;
+                        localAttackPhase = false;
                     }
                 }
-                else if (releasePhase)
+                else if (localReleasePhase)
                 {
-                    envelopeLevel -= releaseRate;
-                    if (envelopeLevel <= 0.0)
+                    localEnvelopeLevel -= releaseRate;
+                    if (localEnvelopeLevel <= 0.0)
                     {
                         clearCurrentNote();
                         break;
                     }
                 }
 
-                float l = (inL[pos] * invAlpha + inL[nextPos] * alpha) * (float)envelopeLevel;
-                float r = inR != nullptr ? (inR[pos] * invAlpha + inR[nextPos] * alpha) * (float)envelopeLevel : l;
+                // Get current sample with interpolation
+                float l = (inL[pos] * invAlpha + inL[nextPos] * alpha) * static_cast<float>(localEnvelopeLevel);
+                float r = inR != nullptr ? (inR[pos] * invAlpha + inR[nextPos] * alpha) * static_cast<float>(localEnvelopeLevel) : l;
 
-                // Apply crossfade if needed (for monophonic mode)
-                if (isFading && localFadingSamplePosition >= 0)
-                {
-                    // Calculate position for fading note
-                    auto fadingPos = (int)localFadingSamplePosition;
-                    auto fadingAlpha = (float)(localFadingSamplePosition - fadingPos);
-                    auto fadingInvAlpha = 1.0f - fadingAlpha;
-
-                    // Simple linear interpolation for fading note
-                    int fadingNextPos = fadingPos + 1;
-                    if (fadingNextPos >= audioData.getNumSamples())
-                        fadingNextPos = fadingPos;
-
-                    // Calculate fade out factor (linear fade)
-                    float fadeOutFactor = juce::jmax(0.0f, (float)(1.0 - (fadeOutCounter / FADE_TIME_SAMPLES)));
-                    fadeOutCounter++;
-
-                    if (fadeOutFactor > 0.0f)
-                    {
-                        // Apply the fading envelope
-                        float fadingEnvelope = fadingEnvelopeLevel * fadeOutFactor;
-
-                        // Get samples for the fading note
-                        float fadingL = (inL[fadingPos] * fadingInvAlpha + inL[fadingNextPos] * fadingAlpha) * fadingEnvelope;
-                        float fadingR = inR != nullptr ? (inR[fadingPos] * fadingInvAlpha + inR[fadingNextPos] * fadingAlpha) * fadingEnvelope
-                                                       : fadingL;
-
-                        // Mix the fading note with the current note
-                        l += fadingL;
-                        r += fadingR;
-
-                        // Update the fading position
-                        localFadingSamplePosition += pitchRatio;
-                        if (localFadingSamplePosition >= audioData.getNumSamples() || fadeOutCounter >= FADE_TIME_SAMPLES)
-                        {
-                            isFading = false;
-                            localFadingSamplePosition = -1;
-                        }
-                    }
-                    else
-                    {
-                        isFading = false;
-                        localFadingSamplePosition = -1;
-                    }
-                }
-
-                // Apply the final gain
+                // Apply output gain
                 if (outR != nullptr)
                 {
-                    *outL++ += l * lgain;
-                    *outR++ += r * rgain;
+                    outL[sampleIndex] += l * lgain;
+                    outR[sampleIndex] += r * rgain;
                 }
                 else
                 {
-                    *outL++ += l * lgain;
+                    outL[sampleIndex] += l * lgain;
                 }
 
+                // Update source position
                 localSourceSamplePosition += pitchRatio;
 
+                // Handle loop or end of sample
                 if (localSourceSamplePosition >= audioData.getNumSamples())
                 {
-                    // For one-shot samples, we just stop when we reach the end
-                    if (!releasePhase)
+                    if (!localReleasePhase)
                     {
-                        releasePhase = true;
+                        localReleasePhase = true;
                     }
-
-                    // Loop playback position for visualization
-                    // This is crucial for seeing the full waveform
                     localSourceSamplePosition = 0.0;
                 }
-
-                // Update the current position for visualization
-                currentSamplePosition = (pos * 1.0) / audioData.getNumSamples() * audioData.getNumSamples();
             }
 
+            // Save back the updated values
             this->sourceSamplePosition = localSourceSamplePosition;
-            this->fadingSamplePosition = localFadingSamplePosition;
+            this->envelopeLevel = localEnvelopeLevel;
+            this->attackPhase = localAttackPhase;
+            this->releasePhase = localReleasePhase;
+            this->currentSamplePosition = static_cast<int>(localSourceSamplePosition);
         }
     }
 
     bool isVoiceActive() const
     {
-        return getCurrentlyPlayingSound() != nullptr && !releasePhase;
+        return getCurrentlyPlayingSound() != nullptr && !releasePhase && !shouldKill;
     }
 
     // Current sample position as a percentage of the total length
@@ -273,9 +231,14 @@ public:
         if (auto *sound = dynamic_cast<ProxySamplerSound *>(getCurrentlyPlayingSound().get()))
         {
             // Return current sample position as a proportion of the total sample length
-            return (sourceSamplePosition / sound->getAudioData().getNumSamples()) * sound->getAudioData().getNumSamples();
+            return sourceSamplePosition;
         }
         return 0.0;
+    }
+
+    int getCurrentMidiNote() const
+    {
+        return currentMidiNote;
     }
 
 private:
@@ -290,11 +253,10 @@ private:
     bool attackPhase, releasePhase;
     double envelopeLevel;
 
-    // For smooth crossfading in monophonic mode
-    double fadingSamplePosition;
-    double fadingEnvelopeLevel;
-    double fadeOutCounter;
-    bool isFading;
+    // MIDI and state
+    int currentMidiNote;
+    double sampleRate;
+    bool shouldKill;
 };
 
 SamplerProcessor::SamplerProcessor()
@@ -302,7 +264,8 @@ SamplerProcessor::SamplerProcessor()
       attackTimeMs(5.0f),    // 5ms default attack
       releaseTimeMs(100.0f), // 100ms default release
       gain(1.0f),
-      monophonic(false) // Default to polyphonic
+      monophonic(false), // Default to polyphonic
+      lastMonophonicNote(-1)
 {
     sampler = std::make_unique<juce::Synthesiser>();
 
@@ -318,6 +281,10 @@ SamplerProcessor::SamplerProcessor()
         voicePos.position = 0;
         voicePos.isActive = false;
     }
+
+    // Initialize anti-pop buffer
+    antiPopBuffer.setSize(2, 512); // 2 channels, small buffer
+    antiPopBuffer.clear();
 
     // Load the default samples
     loadDefaultSamples();
@@ -387,6 +354,50 @@ void SamplerProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Midi
 {
     buffer.clear();
 
+    // Check for monophonic mode and handle it specially
+    if (monophonic && !midiMessages.isEmpty())
+    {
+        // Capture current audio state before processing new notes (anti-pop mechanism)
+        captureAntiPopBuffer(buffer);
+
+        // Process all MIDI events in this block
+        juce::MidiBuffer::Iterator it(midiMessages);
+        juce::MidiMessage message;
+        int samplePosition;
+
+        // Find the latest note-on message in this block
+        int latestNoteOn = -1;
+        int latestNoteOnPos = -1;
+
+        while (it.getNextEvent(message, samplePosition))
+        {
+            if (message.isNoteOn())
+            {
+                latestNoteOn = message.getNoteNumber();
+                latestNoteOnPos = samplePosition;
+                lastMonophonicNote = latestNoteOn;
+            }
+            else if (message.isNoteOff() && message.getNoteNumber() == lastMonophonicNote)
+            {
+                // Only process note-offs for the current note
+                handleMidiEvent(message);
+            }
+        }
+
+        // Clear existing MIDI messages and only process the latest note-on if there is one
+        midiMessages.clear();
+
+        if (latestNoteOn >= 0)
+        {
+            // Stop all playing notes first
+            sampler->allNotesOff(1, false);
+
+            // Create a new note-on message for the latest note
+            juce::MidiMessage newNoteOn = juce::MidiMessage::noteOn(1, latestNoteOn, (uint8_t)100);
+            midiMessages.addEvent(newNoteOn, latestNoteOnPos);
+        }
+    }
+
     // Process incoming MIDI messages
     for (const auto &metadata : midiMessages)
     {
@@ -396,6 +407,12 @@ void SamplerProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Midi
     // Render the sampler audio
     sampler->renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
 
+    // Apply monophonic mode anti-pop processing if we have captured a buffer
+    if (monophonic && antiPopCaptured)
+    {
+        applyAntiPopProcessing(buffer);
+    }
+
     // Apply gain
     if (gain != 1.0f)
     {
@@ -404,6 +421,66 @@ void SamplerProcessor::processBlock(juce::AudioBuffer<float> &buffer, juce::Midi
 
     // Update voice positions for display purposes
     updateVoicePositions();
+}
+
+void SamplerProcessor::captureAntiPopBuffer(const juce::AudioBuffer<float> &buffer)
+{
+    // Only capture if any voice is active
+    if (!isAnyVoiceActive())
+    {
+        antiPopCaptured = false;
+        return;
+    }
+
+    // Make sure our anti-pop buffer is the right size
+    const int samplesToCapture = juce::jmin(buffer.getNumSamples(), antiPopBuffer.getNumSamples());
+
+    // Resize if needed (keeping data)
+    if (antiPopBuffer.getNumSamples() < samplesToCapture)
+    {
+        antiPopBuffer.setSize(buffer.getNumChannels(), samplesToCapture, true, true, true);
+    }
+
+    // Capture a silent buffer to be filled by the sampler
+    antiPopBuffer.clear();
+
+    // Flag that we've captured
+    antiPopCaptured = true;
+
+    // Remember the current voice states to restore later if needed
+    // This is a simplification - in a real implementation you'd store more state
+    sampler->renderNextBlock(antiPopBuffer, juce::MidiBuffer(), 0, samplesToCapture);
+}
+
+void SamplerProcessor::applyAntiPopProcessing(juce::AudioBuffer<float> &buffer)
+{
+    if (!antiPopCaptured)
+        return;
+
+    const int numSamples = juce::jmin(buffer.getNumSamples(), antiPopBuffer.getNumSamples());
+    const int numChannels = juce::jmin(buffer.getNumChannels(), antiPopBuffer.getNumChannels());
+
+    // Apply a short crossfade between the old and new audio
+    for (int channel = 0; channel < numChannels; ++channel)
+    {
+        float *bufferData = buffer.getWritePointer(channel);
+        const float *antiPopData = antiPopBuffer.getReadPointer(channel);
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            // Short crossfade - 32 samples is about 0.7ms at 44.1kHz
+            const int fadeSamples = 32;
+
+            if (i < fadeSamples)
+            {
+                float alpha = static_cast<float>(i) / fadeSamples;
+                bufferData[i] = bufferData[i] * alpha + antiPopData[i] * (1.0f - alpha);
+            }
+        }
+    }
+
+    // Reset for next time
+    antiPopCaptured = false;
 }
 
 void SamplerProcessor::updateVoicePositions()
@@ -456,7 +533,8 @@ bool SamplerProcessor::isAnyVoiceActive() const
 
 void SamplerProcessor::reset()
 {
-    sampler->allNotesOff(0, true);
+    sampler->allNotesOff(0, false);
+    antiPopCaptured = false;
 }
 
 void SamplerProcessor::releaseResources()
@@ -469,38 +547,43 @@ void SamplerProcessor::handleMidiEvent(const juce::MidiMessage &midiMessage)
     // Pass the MIDI message directly to the sampler
     if (sampler != nullptr)
     {
-        if (midiMessage.isNoteOn())
+        // Everything is handled in the processBlock method for monophonic mode
+        if (!monophonic)
         {
-            // If monophonic mode is enabled, stop all playing notes with a proper tail-off
-            // so we can smoothly crossfade to the new note
-            if (monophonic)
+            if (midiMessage.isNoteOn())
             {
-                for (int i = 0; i < sampler->getNumVoices(); ++i)
-                {
-                    auto *voice = sampler->getVoice(i);
-                    if (voice->isPlayingChannel(midiMessage.getChannel()) &&
-                        voice->isVoiceActive())
-                    {
-                        // Use true for allowTailOff to get a smooth transition
-                        voice->stopNote(1.0f, true);
-                    }
-                }
+                sampler->noteOn(midiMessage.getChannel(),
+                                midiMessage.getNoteNumber(),
+                                midiMessage.getFloatVelocity());
             }
-
-            sampler->noteOn(midiMessage.getChannel(),
-                            midiMessage.getNoteNumber(),
-                            midiMessage.getFloatVelocity());
+            else if (midiMessage.isNoteOff())
+            {
+                sampler->noteOff(midiMessage.getChannel(),
+                                 midiMessage.getNoteNumber(),
+                                 midiMessage.getFloatVelocity(),
+                                 true);
+            }
+            else if (midiMessage.isAllNotesOff() || midiMessage.isAllSoundOff())
+            {
+                sampler->allNotesOff(midiMessage.getChannel(), true);
+            }
         }
-        else if (midiMessage.isNoteOff())
+        else
         {
-            sampler->noteOff(midiMessage.getChannel(),
-                             midiMessage.getNoteNumber(),
-                             midiMessage.getFloatVelocity(),
-                             true);
-        }
-        else if (midiMessage.isAllNotesOff() || midiMessage.isAllSoundOff())
-        {
-            sampler->allNotesOff(midiMessage.getChannel(), true);
+            // For monophonic mode, only handle note-offs and other control messages here
+            // Note-ons are handled in processBlock to ensure only one note plays
+            if (midiMessage.isNoteOff())
+            {
+                sampler->noteOff(midiMessage.getChannel(),
+                                 midiMessage.getNoteNumber(),
+                                 midiMessage.getFloatVelocity(),
+                                 true);
+            }
+            else if (midiMessage.isAllNotesOff() || midiMessage.isAllSoundOff())
+            {
+                sampler->allNotesOff(midiMessage.getChannel(), true);
+                lastMonophonicNote = -1;
+            }
         }
     }
 }
@@ -528,49 +611,16 @@ void SamplerProcessor::setMonophonic(bool isMonophonic)
     if (monophonic != isMonophonic)
     {
         monophonic = isMonophonic;
+        lastMonophonicNote = -1;
 
-        // When switching to monophonic mode, we don't need to forcibly stop all notes
-        // The proper note handling will happen in handleMidiEvent when new notes are played
+        // Stop all notes when switching modes
+        sampler->allNotesOff(1, false);
     }
 }
 
 void SamplerProcessor::updateActiveVoices()
 {
-    // If in monophonic mode, make sure only one voice can be active
-    if (monophonic)
-    {
-        // Find the most recently activated voice
-        juce::SynthesiserVoice *activeVoice = nullptr;
-
-        for (int i = 0; i < sampler->getNumVoices(); ++i)
-        {
-            if (auto *voice = sampler->getVoice(i))
-            {
-                if (voice->isVoiceActive() && voice->getCurrentlyPlayingNote() > 0)
-                {
-                    if (activeVoice == nullptr)
-                    {
-                        activeVoice = voice;
-                    }
-                }
-            }
-        }
-
-        // Make sure only that voice is sounding
-        if (activeVoice != nullptr)
-        {
-            for (int i = 0; i < sampler->getNumVoices(); ++i)
-            {
-                if (auto *voice = sampler->getVoice(i))
-                {
-                    if (voice != activeVoice && voice->isVoiceActive())
-                    {
-                        voice->stopNote(0.0f, true); // Use smooth release
-                    }
-                }
-            }
-        }
-    }
+    // Only needed for the old implementation
 }
 
 void SamplerProcessor::updateVoiceParameters()
