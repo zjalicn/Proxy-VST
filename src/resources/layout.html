@@ -48,6 +48,8 @@
         <!-- Main Editor Panel -->
         <div class="editor">
           <div class="editor__waveform">
+            <!-- Added sample name display -->
+            <div id="currentSampleDisplay" class="editor__current-sample"></div>
             <canvas
               id="waveformDisplay"
               class="editor__waveform-display"
@@ -193,6 +195,7 @@
       let waveformCanvas;
       let waveformContext;
       let playbackPositionElement;
+      let currentSampleDisplay;
 
       // Utility Functions
       function log(msg) {
@@ -227,11 +230,19 @@
         }
         if (values.sampleName !== undefined) {
           state.samples.sampleName = values.sampleName;
+          updateCurrentSampleDisplay();
         }
 
         updateKnobUI();
         updateSampleSelection();
       };
+
+      // Update the current sample display
+      function updateCurrentSampleDisplay() {
+        if (currentSampleDisplay) {
+          currentSampleDisplay.textContent = state.samples.sampleName;
+        }
+      }
 
       // Update monophonic toggle state
       window.updateMonophonicState = function (isMonophonic) {
@@ -310,6 +321,8 @@
 
               // Update the state and send to C++
               state.samples.sampleName = sample;
+              // Update the current sample display
+              updateCurrentSampleDisplay();
               window.valueChanged("sampler", "sample", sample);
             });
 
@@ -343,6 +356,7 @@
         }
         if (values.sampleName !== undefined) {
           state.samples.sampleName = values.sampleName;
+          updateCurrentSampleDisplay();
         }
 
         updateKnobUI();
@@ -637,6 +651,7 @@
         // Initialize waveform display
         waveformCanvas = document.getElementById("waveformDisplay");
         playbackPositionElement = document.getElementById("playbackPosition");
+        currentSampleDisplay = document.getElementById("currentSampleDisplay");
 
         if (waveformCanvas) {
           waveformContext = waveformCanvas.getContext("2d");
@@ -663,6 +678,7 @@
 
         // Initialize UI with default values
         updateKnobUI();
+        updateCurrentSampleDisplay();
       });
     </script>
   </body>

@@ -76,6 +76,7 @@ html {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overflow-x: hidden; // Prevent horizontal scroll
 
   &__title {
     font-size: $font-size-section;
@@ -89,16 +90,19 @@ html {
     display: flex;
     flex-direction: column;
     gap: $spacing-md;
+    width: 100%; // Ensure container uses full width
   }
 
   &__category {
+    width: 100%; // Ensure category uses full width
+
     &--collapsed {
       .sidebar__sample-list {
         display: none;
       }
 
       .sidebar__category-header::after {
-        transform: rotate(-90deg);
+        transform: translateY(-50%) rotate(-90deg); // Fixed rotation
       }
     }
   }
@@ -115,6 +119,10 @@ html {
     position: relative;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    width: 100%; // Ensure header uses full width
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; // Add ellipsis for overflowing text
 
     &::after {
       content: "";
@@ -139,6 +147,7 @@ html {
     list-style: none;
     margin-bottom: $spacing-xs;
     padding-left: $spacing-xs;
+    width: 100%; // Ensure list uses full width
   }
 
   &__sample-item {
@@ -147,6 +156,10 @@ html {
     margin-bottom: $spacing-xs;
     cursor: pointer;
     transition: background-color $transition-quick;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis; // Add ellipsis for overflowing text
+    max-width: 100%; // Ensure text doesn't overflow
 
     &:hover {
       background-color: rgba(255, 255, 255, 0.05);
@@ -224,6 +237,23 @@ html {
       background-color: $primary-color;
       z-index: 10;
     }
+  }
+
+  // Add current sample display
+  &__current-sample {
+    position: absolute;
+    top: $spacing-sm;
+    right: $spacing-sm;
+    padding: $spacing-xs $spacing-sm;
+    background-color: rgba($background-darker, 0.7);
+    color: $primary-color;
+    font-size: $font-size-small;
+    border-radius: $border-radius-sm;
+    z-index: 20;
+    max-width: 50%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   &__controls {
