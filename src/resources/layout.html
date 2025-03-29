@@ -189,6 +189,8 @@
           totalSampleLength: 0, // Total length of the current sample
           waveformData: null, // Actual sample data
           lastOpenCategory: null, // Track the last opened category
+          firstWaveformPointX: 16, // Actual X coordinate of first waveform point
+          lastWaveformPointX: 0, // Actual X coordinate of last waveform point
         },
       };
 
@@ -462,33 +464,43 @@
         document.getElementById("rightMeter").style.height = `${rightLevel}%`;
       };
 
+      // Calculate playhead position based on sample position
+      function calculatePlayheadPosition(position, totalLength) {
+        if (totalLength <= 0) return state.ui.firstWaveformPointX;
+
+        const positionRatio = position / totalLength;
+        const waveformWidth =
+          state.ui.lastWaveformPointX - state.ui.firstWaveformPointX;
+        const playheadX =
+          state.ui.firstWaveformPointX + positionRatio * waveformWidth;
+
+        // Keep the playhead within the waveform boundaries
+        return Math.max(
+          state.ui.firstWaveformPointX,
+          Math.min(playheadX, state.ui.lastWaveformPointX)
+        );
+      }
+
       // Update playback position marker
       window.updatePlaybackPosition = function (position) {
         state.ui.playbackPosition = position;
 
         if (waveformCanvas && playbackPositionElement) {
           if (state.ui.totalSampleLength > 0) {
-            // Scale the position relative to the total sample length
-            const positionRatio = position / state.ui.totalSampleLength;
-            const canvasWidth = waveformCanvas.width;
-
-            // Calculate the position in pixels
-            const positionX = Math.min(
-              positionRatio * canvasWidth,
-              canvasWidth
+            const positionX = calculatePlayheadPosition(
+              position,
+              state.ui.totalSampleLength
             );
             playbackPositionElement.style.left = `${positionX}px`;
           } else {
-            // If we don't have sample length yet, use a simple percentage scale
-            // Assuming position is between 0-100
+            // Fallback if we don't have sample length
             const positionPercentage = Math.min(position / 100, 1.0);
-            const canvasWidth = waveformCanvas.width;
-            const positionX = positionPercentage * canvasWidth;
+            const waveformWidth =
+              state.ui.lastWaveformPointX - state.ui.firstWaveformPointX;
+            const positionX =
+              state.ui.firstWaveformPointX + positionPercentage * waveformWidth;
             playbackPositionElement.style.left = `${positionX}px`;
           }
-
-          // Note: The visibility of the playback position is controlled by C++
-          // through direct DOM manipulation rather than here
         }
       };
 
@@ -507,13 +519,10 @@
           if (!playheadElement) continue;
 
           if (isActive) {
-            // Calculate position in pixels
-            const positionRatio = position.position / totalSampleLength;
-            const canvasWidth =
-              document.getElementById("waveformDisplay").width;
-            const positionX = Math.min(
-              positionRatio * canvasWidth,
-              canvasWidth
+            // Calculate position using our helper function
+            const positionX = calculatePlayheadPosition(
+              position.position,
+              totalSampleLength
             );
 
             // Set position
@@ -544,21 +553,23 @@
         const height = waveformCanvas.height;
         const centerY = height / 2;
 
+        // Set waveform boundaries to span the entire canvas
+        state.ui.firstWaveformPointX = 16; // Start from left edge
+        state.ui.lastWaveformPointX = width - 16; // End at right edge
+
         // Clear the canvas
         waveformContext.clearRect(0, 0, width, height);
 
         // If we don't have actual waveform data yet, draw a placeholder
         if (!state.ui.waveformData) {
-          console.log("No waveform data available, drawing placeholder");
-
-          // Draw placeholder waveform
+          // Draw placeholder waveform with NO padding
           waveformContext.strokeStyle = "#00bcd4";
           waveformContext.lineWidth = 2;
           waveformContext.beginPath();
 
-          // Draw a simple sine wave as placeholder
+          // Draw a simple sine wave for the full width
           for (let x = 0; x < width; x++) {
-            const y = height / 2 + Math.sin(x / 20) * (height / 4);
+            const y = centerY + Math.sin(x / 20) * (height / 4);
             if (x === 0) {
               waveformContext.moveTo(x, y);
             } else {
@@ -570,14 +581,12 @@
           return;
         }
 
-        console.log("Drawing actual waveform data");
-
         // Get waveform data
         const waveformData = state.ui.waveformData;
         const numChannels = waveformData.length;
 
-        // Calculate scaling factors
-        const amplitudeScale = height / 3; // Scale amplitude to 1/3 of height
+        // Calculate scaling factors - use full height
+        const amplitudeScale = height / 3; // Scale amplitude to 1/3 of total height
 
         // Draw each channel
         for (let channel = 0; channel < numChannels; channel++) {
@@ -589,7 +598,7 @@
           waveformContext.lineWidth = 2;
           waveformContext.beginPath();
 
-          // Calculate x-coordinate step size
+          // Calculate x-coordinate step size - use full width
           const xStep = width / pointsCount;
 
           // Draw the waveform
@@ -709,6 +718,11 @@
             waveformCanvas.height = container.clientHeight;
             state.ui.waveformWidth = waveformCanvas.width;
             state.ui.waveformHeight = waveformCanvas.height;
+
+            // Initialize waveform boundaries (will be updated in drawWaveform)
+            state.ui.firstWaveformPointX = 16;
+            state.ui.lastWaveformPointX = waveformCanvas.width - 16;
+
             drawWaveform();
           }
 
