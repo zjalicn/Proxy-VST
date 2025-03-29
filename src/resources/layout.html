@@ -188,6 +188,7 @@
           playbackPosition: 0,
           totalSampleLength: 0, // Total length of the current sample
           waveformData: null, // Actual sample data
+          lastOpenCategory: null, // Track the last opened category
         },
       };
 
@@ -253,6 +254,13 @@
         }
       };
 
+      // Function to close all category elements
+      function closeAllCategories() {
+        document.querySelectorAll(".sidebar__category").forEach((category) => {
+          category.classList.add("sidebar__category--collapsed");
+        });
+      }
+
       // Update the sample list with categorized samples
       window.updateCategorizedSamplesList = function (categoryData) {
         const container = document.getElementById("categorizedSampleList");
@@ -280,14 +288,22 @@
           noSamplesMessage.style.display = "none";
         }
 
+        // Sort categories alphabetically
+        categoryData.sort((a, b) => a.name.localeCompare(b.name));
+
         // Create category sections
         categoryData.forEach((category) => {
           // Skip categories with no samples
           if (category.samples.length === 0) return;
 
+          // Sort samples alphabetically
+          category.samples.sort((a, b) => a.localeCompare(b));
+
           // Create category container
           const categoryDiv = document.createElement("div");
-          categoryDiv.className = "sidebar__category";
+          categoryDiv.className =
+            "sidebar__category sidebar__category--collapsed"; // Start collapsed
+          categoryDiv.dataset.category = category.name;
 
           // Create category header
           const categoryHeader = document.createElement("div");
@@ -308,6 +324,10 @@
 
             if (sample === state.samples.sampleName) {
               li.classList.add("sidebar__sample-item--active");
+
+              // Expand the category that contains the active sample
+              categoryDiv.classList.remove("sidebar__category--collapsed");
+              state.ui.lastOpenCategory = category.name;
             }
 
             li.addEventListener("click", () => {
@@ -339,7 +359,23 @@
           .forEach((header) => {
             header.addEventListener("click", function () {
               const category = this.parentElement;
-              category.classList.toggle("sidebar__category--collapsed");
+              const categoryName = category.dataset.category;
+
+              // If this category is already open, just close it
+              if (
+                !category.classList.contains("sidebar__category--collapsed")
+              ) {
+                category.classList.add("sidebar__category--collapsed");
+                state.ui.lastOpenCategory = null;
+                return;
+              }
+
+              // Close all categories first
+              closeAllCategories();
+
+              // Then open only this one
+              category.classList.remove("sidebar__category--collapsed");
+              state.ui.lastOpenCategory = categoryName;
             });
           });
       };
@@ -381,6 +417,16 @@
         document.querySelectorAll(".sidebar__sample-item").forEach((item) => {
           if (item.dataset.sample === state.samples.sampleName) {
             item.classList.add("sidebar__sample-item--active");
+
+            // Find the category containing this sample and expand it
+            const parentCategory = item.closest(".sidebar__category");
+            if (parentCategory) {
+              closeAllCategories();
+
+              // Open the category containing the selected sample
+              parentCategory.classList.remove("sidebar__category--collapsed");
+              state.ui.lastOpenCategory = parentCategory.dataset.category;
+            }
           } else {
             item.classList.remove("sidebar__sample-item--active");
           }
